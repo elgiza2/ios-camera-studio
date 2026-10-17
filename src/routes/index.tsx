@@ -124,7 +124,7 @@ function App() {
 
 /* ---------------- Camera ---------------- */
 function Camera({ last, onCapture, onGallery, onEdit }: {
-  last?: Photo; onCapture: (img: string, mode: (typeof MODES)[number]) => void; onGallery: () => void; onEdit: () => void;
+  last: Photo | undefined; onCapture: (img: string, mode: (typeof MODES)[number]) => void; onGallery: () => void; onEdit: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
