@@ -1,14 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Toaster, toast } from "sonner";
 import {
-  RefreshCw, Zap, ZapOff, Sparkles, X, Wand2, Crop, SlidersHorizontal, Trash2, Download, Crown, Check, ChevronLeft, Images,
+  RefreshCw, Zap, ZapOff, Sparkles, Wand2, Crop, SlidersHorizontal, Trash2, Download, Crown, Check, ChevronLeft, Images,
+  Share2, Pencil, X, RotateCw, FlipHorizontal, FlipVertical, Palette, Loader2,
 } from "lucide-react";
-import { aiEditImage } from "@/lib/ai.functions";
-import {
-  CAMERA_PROMPT, EFFECTS, consumeTrial, deletePhoto, isPro, listPhotos, savePhoto, trialsLeft, DAILY_TRIALS, type Photo,
-} from "@/lib/store";
+import { aiEditImage, getPublicConfig } from "@/lib/ai.functions";
+import { createCheckout } from "@/lib/pay.functions";
+import { CAMERA_PROMPT, consumeTrial, deletePhoto, isPro, listPhotos, savePhoto, setPro, trialsLeft, DAILY_TRIALS, type Photo } from "@/lib/store";
+import { DEFAULT_MODES, CATEGORIES, type AIMode } from "@/lib/modes";
+import effectsGrid from "@/assets/effects-grid.jpg";
+import paywallBg from "@/assets/paywall.jpg";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -25,47 +28,60 @@ export const Route = createFileRoute("/")({
 });
 
 const MODES = [
-  { id: "night", label: "NIGHT", aspect: 3 / 4, extra: " Night mode: bright, low noise, preserve night ambience." },
-  { id: "portrait", label: "PORTRAIT", aspect: 3 / 4, extra: " Strong portrait-mode background blur, subject in sharp focus." },
+  { id: "night", label: "NIGHT", aspect: 3 / 4, extra: " Night mode: bright exposure, very low noise, preserve night ambience and city lights." },
+  { id: "portrait", label: "PORTRAIT", aspect: 3 / 4, extra: " Portrait mode: strong creamy background blur f/1.4, subject in razor sharp focus, flattering skin." },
   { id: "photo", label: "PHOTO", aspect: 3 / 4, extra: "" },
   { id: "square", label: "SQUARE", aspect: 1, extra: "" },
-  { id: "pano", label: "PANO", aspect: 16 / 9, extra: " Wide panoramic look." },
+  { id: "pano", label: "PANO", aspect: 16 / 9, extra: " Ultra wide panoramic landscape look, extended dynamic range." },
 ] as const;
+type Mode = (typeof MODES)[number];
 
-const uid = () => `${Date.now()}-${Math.floor(performance.now() * 1000) % 100000}`;
+const uid = () => `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+const loadImg = (src: string) => new Promise<HTMLImageElement>((r) => { const i = new Image(); i.onload = () => r(i); i.src = src; });
 
-function downscale(src: string, max = 1280, aspect?: number, adjust = ""): Promise<string> {
-  return new Promise((res) => {
-    const img = new Image();
-    img.onload = () => {
-      let sw = img.width, sh = img.height, sx = 0, sy = 0;
-      if (aspect) {
-        if (sw / sh > aspect) { const nw = sh * aspect; sx = (sw - nw) / 2; sw = nw; }
-        else { const nh = sw / aspect; sy = (sh - nh) / 2; sh = nh; }
-      }
-      const s = Math.min(1, max / Math.max(sw, sh));
-      const c = document.createElement("canvas");
-      c.width = Math.round(sw * s); c.height = Math.round(sh * s);
-      const ctx = c.getContext("2d")!;
-      if (adjust) ctx.filter = adjust;
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
-      res(c.toDataURL("image/jpeg", 0.9));
-    };
-    img.src = src;
-  });
+type Edit = { crop: number; rotate: number; flipX: boolean; flipY: boolean; filter: string; vignette: number };
+async function render(src: string, e: Partial<Edit> = {}, max = 1280): Promise<string> {
+  const img = await loadImg(src);
+  const rot = ((e.rotate ?? 0) % 360 + 360) % 360;
+  let sw = img.width, sh = img.height, sx = 0, sy = 0;
+  const base = rot % 180 ? img.height / img.width : img.width / img.height;
+  if (e.crop) {
+    const a = rot % 180 ? 1 / e.crop : e.crop;
+    if (sw / sh > a) { const nw = sh * a; sx = (sw - nw) / 2; sw = nw; } else { const nh = sw / a; sy = (sh - nh) / 2; sh = nh; }
+  }
+  void base;
+  const s = Math.min(1, max / Math.max(sw, sh));
+  const w = Math.round(sw * s), h = Math.round(sh * s);
+  const c = document.createElement("canvas");
+  c.width = rot % 180 ? h : w; c.height = rot % 180 ? w : h;
+  const ctx = c.getContext("2d")!;
+  ctx.translate(c.width / 2, c.height / 2);
+  ctx.rotate((rot * Math.PI) / 180);
+  ctx.scale(e.flipX ? -1 : 1, e.flipY ? -1 : 1);
+  if (e.filter) ctx.filter = e.filter;
+  ctx.drawImage(img, sx, sy, sw, sh, -w / 2, -h / 2, w, h);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (e.vignette) {
+    const g = ctx.createRadialGradient(c.width / 2, c.height / 2, Math.min(c.width, c.height) * 0.3, c.width / 2, c.height / 2, Math.max(c.width, c.height) * 0.75);
+    g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, `rgba(0,0,0,${e.vignette / 100})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, c.width, c.height);
+  }
+  return c.toDataURL("image/jpeg", 0.92);
 }
 
-type View = "camera" | "gallery" | "studio";
+type View = "camera" | "gallery" | "studio" | "pro";
 
 function App() {
   const [view, setView] = useState<View>("camera");
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [studioPhoto, setStudioPhoto] = useState<Photo | null>(null);
-  const [paywall, setPaywall] = useState(false);
+  const [modes, setModes] = useState<AIMode[]>(DEFAULT_MODES);
+  const [prices, setPrices] = useState({ monthly: 150, yearly: 1200, currency: "EGP" });
   const edit = useServerFn(aiEditImage);
+  const cfgFn = useServerFn(getPublicConfig);
 
   const refresh = useCallback(() => listPhotos().then(setPhotos), []);
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { refresh(); cfgFn().then((c) => { if (c.modes.length) setModes(c.modes); setPrices(c.prices); }).catch(() => {}); }, [refresh, cfgFn]);
 
   const runAI = useCallback(async (source: string, prompt: string, label: string, original?: string) => {
     const id = uid();
@@ -90,152 +106,205 @@ function App() {
   return (
     <div className="fixed inset-0 overflow-hidden bg-background text-foreground select-none" dir="ltr">
       <Toaster position="top-center" theme="dark" />
-      {view === "camera" && (
-        <Camera
-          last={photos[0]}
-          onCapture={(img, mode) => runAI(img, CAMERA_PROMPT + mode.extra, "محسّنة")}
-          onGallery={() => setView("gallery")}
-          onEdit={() => { setStudioPhoto(null); setView("studio"); }}
-        />
-      )}
-      {view === "gallery" && (
-        <Gallery
-          photos={photos}
-          onBack={() => setView("camera")}
-          onEdit={(p) => { setStudioPhoto(p); setView("studio"); }}
-          onDelete={async (id) => { await deletePhoto(id); refresh(); }}
-        />
-      )}
-      {view === "studio" && (
-        <Studio
-          photos={photos}
-          photo={studioPhoto}
-          setPhoto={setStudioPhoto}
-          onBack={() => setView("camera")}
-          onPaywall={() => setPaywall(true)}
-          runAI={runAI}
-          onSaved={refresh}
-        />
-      )}
-      {paywall && <Paywall onClose={() => setPaywall(false)} />}
+      <div key={view} className="pop-in h-full">
+        {view === "camera" && (
+          <Camera last={photos[0]} onCapture={(img, m) => runAI(img, CAMERA_PROMPT + m.extra, "محسّنة")}
+            onGallery={() => setView("gallery")} onEdit={() => { setStudioPhoto(null); setView("studio"); }} onPro={() => setView("pro")} />
+        )}
+        {view === "gallery" && (
+          <Gallery photos={photos} onBack={() => setView("camera")}
+            onEdit={(p) => { setStudioPhoto(p); setView("studio"); }}
+            onDelete={async (id) => { await deletePhoto(id); refresh(); }} />
+        )}
+        {view === "studio" && (
+          <Studio photos={photos} photo={studioPhoto} setPhoto={setStudioPhoto} modes={modes} onBack={() => setView("camera")}
+            onPaywall={() => setView("pro")} runAI={runAI} onSaved={refresh} />
+        )}
+        {view === "pro" && <ProPage prices={prices} onClose={() => setView("camera")} />}
+      </div>
     </div>
   );
 }
 
 /* ---------------- Camera ---------------- */
-function Camera({ last, onCapture, onGallery, onEdit }: {
-  last: Photo | undefined; onCapture: (img: string, mode: (typeof MODES)[number]) => void; onGallery: () => void; onEdit: () => void;
+const ZOOM_STOPS = [0.5, 1, 2, 5, 10, 25, 50, 100];
+const toPos = (z: number) => Math.log(z / 0.5) / Math.log(200); // 0..1
+const fromPos = (p: number) => Math.round(0.5 * Math.pow(200, p) * 10) / 10;
+
+function Camera({ last, onCapture, onGallery, onEdit, onPro }: {
+  last: Photo | undefined; onCapture: (img: string, mode: Mode) => void; onGallery: () => void; onEdit: () => void; onPro: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
+  const hwRef = useRef<{ min: number; max: number } | null>(null);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [modeIdx, setModeIdx] = useState(2);
   const [zoom, setZoom] = useState(1);
+  const [dial, setDial] = useState(false);
   const [flash, setFlash] = useState(false);
   const [blink, setBlink] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [spin, setSpin] = useState(0);
   const mode = MODES[modeIdx]!;
 
   useEffect(() => {
     let stream: MediaStream | null = null;
-    navigator.mediaDevices?.getUserMedia({ video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false })
-      .then((s) => { stream = s; if (videoRef.current) videoRef.current.srcObject = s; setErr(""); })
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: facing, width: { ideal: 2560 }, height: { ideal: 1920 } }, audio: false })
+      .then((s) => {
+        stream = s; if (videoRef.current) videoRef.current.srcObject = s; setErr("");
+        const t = s.getVideoTracks()[0]!; trackRef.current = t;
+        const cap = (t.getCapabilities?.() ?? {}) as { zoom?: { min: number; max: number } };
+        hwRef.current = cap.zoom ? { min: cap.zoom.min, max: cap.zoom.max } : null;
+      })
       .catch(() => setErr("اسمح بالوصول للكاميرا لبدء التصوير"));
     return () => stream?.getTracks().forEach((t) => t.stop());
   }, [facing]);
 
-  const shoot = async () => {
-    const v = videoRef.current;
-    if (!v || !v.videoWidth) return;
-    if (flash) { setBlink(true); await new Promise((r) => setTimeout(r, 180)); }
+  // split zoom into hardware (optical/sensor) + digital remainder
+  const hw = hwRef.current;
+  const hwZoom = hw ? Math.min(hw.max, Math.max(hw.min, zoom)) : 1;
+  const digital = Math.max(1, zoom / hwZoom);
+  useEffect(() => {
+    const t = trackRef.current;
+    if (t && hw) t.applyConstraints({ advanced: [{ zoom: hwZoom } as MediaTrackConstraintSet] }).catch(() => {});
+    if (t && "torch" in ((t.getCapabilities?.() ?? {}) as object)) t.applyConstraints({ advanced: [{ torch: flash } as MediaTrackConstraintSet] }).catch(() => {});
+  }, [hwZoom, hw, flash]);
+
+  const grab = (v: HTMLVideoElement) => {
     const c = document.createElement("canvas");
-    const w = v.videoWidth / zoom, h = v.videoHeight / zoom;
+    const w = v.videoWidth / digital, h = v.videoHeight / digital;
     c.width = w; c.height = h;
     const ctx = c.getContext("2d")!;
     if (facing === "user") { ctx.translate(w, 0); ctx.scale(-1, 1); }
     ctx.drawImage(v, (v.videoWidth - w) / 2, (v.videoHeight - h) / 2, w, h, 0, 0, w, h);
-    setBlink(true);
-    setTimeout(() => setBlink(false), 150);
-    const img = await downscale(c.toDataURL("image/jpeg", 0.92), 1280, mode.aspect);
-    onCapture(img, mode);
+    return c;
   };
 
-  // swipe between modes
+  const shoot = async () => {
+    const v = videoRef.current;
+    if (!v || !v.videoWidth || busy) return;
+    setBusy(true);
+    if (flash && !hw) { setBlink(true); await new Promise((r) => setTimeout(r, 160)); }
+    let canvas = grab(v);
+    if (mode.id === "night") {
+      // multi-frame stacking: average 6 frames to cut noise, then lift exposure
+      const N = 6; const ctx = canvas.getContext("2d")!;
+      const acc = new Float32Array(canvas.width * canvas.height * 4);
+      for (let n = 0; n < N; n++) {
+        const d = grab(v).getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
+        for (let i = 0; i < d.length; i++) acc[i]! += d[i]!;
+        await new Promise((r) => setTimeout(r, 70));
+      }
+      const out = ctx.createImageData(canvas.width, canvas.height);
+      for (let i = 0; i < acc.length; i++) out.data[i] = acc[i]! / N;
+      ctx.putImageData(out, 0, 0);
+      const c2 = document.createElement("canvas"); c2.width = canvas.width; c2.height = canvas.height;
+      const x2 = c2.getContext("2d")!; x2.filter = "brightness(1.35) contrast(1.08) saturate(1.1)"; x2.drawImage(canvas, 0, 0);
+      canvas = c2;
+    }
+    setBlink(true); setTimeout(() => setBlink(false), 140);
+    const img = await render(canvas.toDataURL("image/jpeg", 0.92), { crop: mode.aspect, vignette: mode.id === "portrait" ? 25 : 0 }, 1536);
+    onCapture(img, mode);
+    setBusy(false);
+  };
+
   const touchX = useRef(0);
+  const dialRef = useRef<HTMLDivElement>(null);
+  const onDial = (clientX: number) => {
+    const r = dialRef.current!.getBoundingClientRect();
+    setZoom(Math.max(0.5, fromPos(Math.min(1, Math.max(0, (clientX - r.left) / r.width)))));
+  };
+  const zLabel = zoom < 1 ? `.${Math.round(zoom * 10)}` : zoom >= 10 ? Math.round(zoom) : zoom.toFixed(zoom % 1 ? 1 : 0);
 
   return (
-    <div className="relative h-full w-full flex flex-col"
+    <div className="relative flex h-full w-full flex-col"
       onTouchStart={(e) => (touchX.current = e.touches[0]!.clientX)}
       onTouchEnd={(e) => {
+        if (dial) return;
         const dx = e.changedTouches[0]!.clientX - touchX.current;
         if (Math.abs(dx) > 50) setModeIdx((i) => Math.min(MODES.length - 1, Math.max(0, i + (dx < 0 ? 1 : -1))));
       }}>
-      {/* top bar */}
       <div className="relative z-20 flex items-center justify-between px-5 pt-[max(env(safe-area-inset-top),14px)] pb-3">
-        <button onClick={() => setFlash((f) => !f)} className="glass grid size-10 place-items-center rounded-full" aria-label="الفلاش">
+        <button onClick={() => setFlash((f) => !f)} className="glass grid size-10 place-items-center rounded-full transition ease-ios active:scale-90" aria-label="الفلاش">
           {flash ? <Zap className="size-5 text-primary" fill="currentColor" /> : <ZapOff className="size-5" />}
         </button>
-        <div className="glass flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold tracking-wide">
-          <Sparkles className="size-3.5 text-primary" /> AI ENHANCE
-        </div>
-        <button onClick={onEdit} className="glass grid size-10 place-items-center rounded-full" aria-label="الاستوديو">
-          <Wand2 className="size-5" />
+        <span className="glass rounded-full px-3 py-1 text-[11px] font-semibold tracking-widest text-primary transition-all duration-500 ease-ios">{mode.label}</span>
+        <button onClick={onPro} className="glass flex h-10 items-center gap-1.5 rounded-full px-3.5 text-xs font-bold tracking-wide transition ease-ios active:scale-90" aria-label="الاشتراك">
+          <Crown className="size-4 text-primary" /> {isPro() ? "PRO ✓" : "PRO"}
         </button>
       </div>
 
-      {/* viewfinder */}
-      <div className="relative flex-1 flex items-center justify-center overflow-hidden">
-        <div className="relative w-full overflow-hidden transition-all duration-500 ease-out"
+      <div className="relative flex flex-1 items-center justify-center overflow-hidden">
+        <div className="relative w-full overflow-hidden transition-[aspect-ratio] duration-700 ease-ios"
           style={{ aspectRatio: mode.aspect === 1 ? "1" : mode.aspect > 1 ? "16/9" : "3/4", maxHeight: "100%" }}>
           <video ref={videoRef} autoPlay playsInline muted
-            className="absolute inset-0 h-full w-full object-cover transition-transform duration-300"
-            style={{ transform: `scale(${zoom}) ${facing === "user" ? "scaleX(-1)" : ""}`, filter: mode.id === "night" ? "brightness(1.25)" : undefined }} />
-          {mode.id === "portrait" && (
-            <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_120px_40px_var(--scrim)]" />
-          )}
+            className="absolute inset-0 h-full w-full object-cover transition-[transform,filter] duration-500 ease-ios"
+            style={{ transform: `scale(${digital}) ${facing === "user" ? "scaleX(-1)" : ""}`, filter: mode.id === "night" ? "brightness(1.3) contrast(1.05)" : undefined }} />
+          {mode.id === "portrait" && <div className="pop-in pointer-events-none absolute inset-0 shadow-[inset_0_0_140px_50px_var(--scrim)]" />}
           {err && <div className="absolute inset-0 grid place-items-center p-8 text-center text-muted-foreground">{err}</div>}
           {blink && <div className="absolute inset-0 bg-shutter" />}
+          <div key={zLabel} className="pop-in glass absolute left-1/2 top-3 -translate-x-1/2 rounded-full px-3 py-1 text-xs font-bold tabular-nums">{zLabel}×</div>
         </div>
-        {/* zoom pills */}
-        <div className="glass absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1 rounded-full p-1">
-          {[0.5, 1, 2, 3].map((z) => {
-            const val = z < 1 ? 1 : z;
-            const active = zoom === val && (z >= 1 || false);
-            return (
-              <button key={z} onClick={() => setZoom(val)}
-                className={`grid size-9 place-items-center rounded-full text-[11px] font-bold transition ${active ? "bg-scrim text-primary scale-110" : "text-foreground"}`}>
-                {z === 0.5 ? ".5" : z}{active ? "×" : ""}
-              </button>
-            );
-          })}
+
+        <div className="absolute bottom-4 left-1/2 w-[86%] -translate-x-1/2">
+          {dial ? (
+            <div className="glass pop-in rounded-full px-4 py-2">
+              <div ref={dialRef} className="relative h-8 touch-none"
+                onPointerDown={(e) => { (e.target as Element).setPointerCapture(e.pointerId); onDial(e.clientX); }}
+                onPointerMove={(e) => e.buttons && onDial(e.clientX)}
+                onPointerUp={() => setTimeout(() => setDial(false), 1400)}>
+                {Array.from({ length: 41 }).map((_, i) => (
+                  <span key={i} className={`absolute top-1/2 w-px -translate-y-1/2 bg-foreground/60 ${i % 5 ? "h-2" : "h-4"}`} style={{ left: `${(i / 40) * 100}%` }} />
+                ))}
+                {ZOOM_STOPS.map((z) => (
+                  <span key={z} className="absolute -bottom-1 -translate-x-1/2 text-[9px] text-muted-foreground" style={{ left: `${toPos(z) * 100}%` }}>{z}</span>
+                ))}
+                <span className="absolute top-0 h-8 w-0.5 -translate-x-1/2 rounded bg-primary transition-[left] duration-150 ease-ios" style={{ left: `${toPos(zoom) * 100}%` }} />
+              </div>
+            </div>
+          ) : (
+            <div className="glass mx-auto flex w-fit gap-1 rounded-full p-1">
+              {[0.5, 1, 2, 5, 10].map((z) => {
+                const near = (z === 10 ? zoom >= 10 : z === 5 ? zoom >= 5 && zoom < 10 : z === 2 ? zoom >= 2 && zoom < 5 : z === 1 ? zoom >= 1 && zoom < 2 : zoom < 1);
+                return (
+                  <button key={z} onClick={() => setZoom(z)} onDoubleClick={() => setDial(true)} onContextMenu={(e) => { e.preventDefault(); setDial(true); }}
+                    className={`grid size-9 place-items-center rounded-full text-[11px] font-bold transition-all duration-300 ease-ios ${near ? "scale-110 bg-scrim text-primary" : ""}`}>
+                    {near ? `${zLabel}×` : z === 0.5 ? ".5" : z}
+                  </button>
+                );
+              })}
+              <button onClick={() => setDial(true)} className="grid h-9 place-items-center rounded-full px-2 text-[10px] font-bold text-muted-foreground">100</button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* modes */}
-      <div className="relative h-10 overflow-hidden">
-        <div className="absolute left-1/2 top-1/2 flex -translate-y-1/2 gap-6 transition-transform duration-300"
-          style={{ transform: `translate(calc(-${modeIdx * 84 + 30}px), -50%)` }}>
+      <div className="relative h-11 overflow-hidden">
+        <div className="absolute left-1/2 top-1/2 flex gap-6 transition-transform duration-500 ease-ios"
+          style={{ transform: `translate(${-(modeIdx * 84 + 30)}px, -50%)` }}>
           {MODES.map((m, i) => (
             <button key={m.id} onClick={() => setModeIdx(i)}
-              className={`w-[60px] text-center text-[13px] font-semibold tracking-wider transition ${i === modeIdx ? "text-primary" : "text-muted-foreground"}`}>
+              className={`w-[60px] text-center text-[13px] font-semibold tracking-wider transition-all duration-500 ease-ios ${i === modeIdx ? "scale-110 text-primary" : "text-muted-foreground"}`}>
               {m.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* bottom controls */}
-      <div className="flex items-center justify-between px-9 pt-3 pb-[max(env(safe-area-inset-bottom),28px)]">
-        <button onClick={onGallery} className="relative size-14 overflow-hidden rounded-xl border-2 border-glass-border bg-glass" aria-label="المعرض">
+      <div className="flex items-center justify-between px-6 pt-3 pb-[max(env(safe-area-inset-bottom),28px)]">
+        <button onClick={onGallery} className="relative size-14 overflow-hidden rounded-xl border-2 border-glass-border bg-glass transition ease-ios active:scale-90" aria-label="المعرض">
           {last ? <img src={last.src} className="h-full w-full object-cover" alt="" /> : <Images className="m-auto size-6 text-muted-foreground" />}
           {last?.pending && <div className="shimmer absolute inset-0" />}
         </button>
-        <button onClick={shoot} aria-label="التقاط"
-          className="grid size-[78px] place-items-center rounded-full border-4 border-shutter transition active:scale-90">
-          <span className="size-[62px] rounded-full bg-shutter transition active:scale-90" />
+        <button onClick={onEdit} className="glass grid size-12 place-items-center rounded-full transition ease-ios active:scale-90" aria-label="تعديل"><Wand2 className="size-5" /></button>
+        <button onClick={shoot} aria-label="التقاط" className="grid size-[78px] place-items-center rounded-full border-4 border-shutter transition ease-ios active:scale-90">
+          <span className={`size-[62px] rounded-full bg-shutter transition-all duration-300 ease-ios ${busy ? "scale-75 opacity-70" : ""}`} />
         </button>
-        <button onClick={() => setFacing((f) => (f === "user" ? "environment" : "user"))}
-          className="glass grid size-14 place-items-center rounded-full transition active:rotate-180" aria-label="قلب الكاميرا">
-          <RefreshCw className="size-6" />
+        <span className="size-12" />
+        <button onClick={() => { setSpin((s) => s + 180); setFacing((f) => (f === "user" ? "environment" : "user")); setZoom(1); }}
+          className="glass grid size-14 place-items-center rounded-full" aria-label="قلب الكاميرا">
+          <RefreshCw className="size-6 transition-transform duration-500 ease-ios" style={{ transform: `rotate(${spin}deg)` }} />
         </button>
       </div>
     </div>
@@ -243,176 +312,272 @@ function Camera({ last, onCapture, onGallery, onEdit }: {
 }
 
 /* ---------------- Gallery ---------------- */
+async function share(p: Photo) {
+  const blob = await (await fetch(p.src)).blob();
+  const file = new File([blob], `lumen-${p.id}.jpg`, { type: blob.type });
+  if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: "Lumen" }).catch(() => {});
+  else toast.info("المشاركة غير مدعومة على هذا المتصفح");
+}
+function download(p: Photo) {
+  const a = document.createElement("a"); a.href = p.src; a.download = `lumen-${p.id}.jpg`; a.click();
+  toast.success("تم الحفظ");
+}
+const dayLabel = (t: number) => {
+  const d = new Date(t), n = new Date();
+  if (d.toDateString() === n.toDateString()) return "اليوم";
+  if (new Date(n.getTime() - 864e5).toDateString() === d.toDateString()) return "أمس";
+  return d.toLocaleDateString("ar-EG", { day: "numeric", month: "long" });
+};
+
 function Gallery({ photos, onBack, onEdit, onDelete }: {
   photos: Photo[]; onBack: () => void; onEdit: (p: Photo) => void; onDelete: (id: string) => void;
 }) {
   const [open, setOpen] = useState<Photo | null>(null);
-  const [showOrig, setShowOrig] = useState(false);
+  const [filter, setFilter] = useState<"all" | "ai" | "edit">("all");
+  const list = photos.filter((p) => filter === "all" || (filter === "edit" ? p.label === "معدّلة" : p.label !== "معدّلة" && p.label !== "أصلية"));
+  const groups = useMemo(() => {
+    const g: [string, Photo[]][] = [];
+    for (const p of list) { const l = dayLabel(p.createdAt); const last = g[g.length - 1]; if (last && last[0] === l) last[1].push(p); else g.push([l, [p]]); }
+    return g;
+  }, [list]);
+
   return (
-    <div className="h-full overflow-y-auto pb-32" dir="rtl">
-      <Header title="المعرض" onBack={onBack} />
-      {photos.length === 0 && <p className="mt-32 text-center text-muted-foreground">لا توجد صور بعد — التقط أول صورة!</p>}
-      <div className="grid grid-cols-3 gap-0.5 px-0.5">
-        {photos.map((p) => (
-          <button key={p.id} onClick={() => !p.pending && setOpen(p)} className="relative aspect-square overflow-hidden bg-muted">
-            <img src={p.src} className={`h-full w-full object-cover ${p.pending ? "blur-md scale-110" : ""}`} alt="" />
-            {p.pending && <div className="shimmer absolute inset-0 grid place-items-center"><Sparkles className="size-6 animate-pulse text-primary" /></div>}
-          </button>
+    <div className="relative h-full" dir="rtl">
+      <div className="h-full overflow-y-auto pb-36 pt-[calc(max(env(safe-area-inset-top),14px)+64px)]">
+        <div className="px-5 pb-3">
+          <h1 className="text-[34px] font-bold leading-tight">المعرض</h1>
+          <p className="text-sm text-muted-foreground">{photos.length} صورة</p>
+        </div>
+        {list.length === 0 && (
+          <div className="mt-24 text-center text-muted-foreground"><Images className="mx-auto mb-3 size-12 opacity-40" />لا توجد صور بعد</div>
+        )}
+        {groups.map(([label, items]) => (
+          <section key={label} className="mb-4">
+            <h2 className="px-5 pb-2 text-[15px] font-semibold">{label}</h2>
+            <div className="grid grid-cols-3 gap-[3px] px-[3px]">
+              {items.map((p, i) => (
+                <button key={p.id} onClick={() => !p.pending && setOpen(p)} style={{ animationDelay: `${i * 25}ms` }}
+                  className="pop-in relative aspect-square overflow-hidden rounded-[6px] bg-muted transition ease-ios active:scale-95">
+                  <img src={p.src} className={`h-full w-full object-cover ${p.pending ? "scale-110 blur-md" : ""}`} alt="" />
+                  {p.pending && <div className="shimmer absolute inset-0 grid place-items-center"><Sparkles className="size-6 animate-pulse text-primary" /></div>}
+                  {!p.pending && p.label && p.label !== "أصلية" && <span className="glass absolute bottom-1 left-1 grid size-5 place-items-center rounded-full"><Sparkles className="size-3 text-primary" /></span>}
+                </button>
+              ))}
+            </div>
+          </section>
         ))}
       </div>
-      {open && (
-        <div className="fixed inset-0 z-40 flex flex-col bg-background">
-          <div className="flex items-center justify-between px-4 pt-[max(env(safe-area-inset-top),14px)] pb-2">
-            <button onClick={() => setOpen(null)} className="glass grid size-10 place-items-center rounded-full"><X className="size-5" /></button>
-            <span className="glass rounded-full px-3 py-1 text-xs">{open.label ?? "صورة"}</span>
-            <a href={open.src} download={`lumen-${open.id}.png`} className="glass grid size-10 place-items-center rounded-full"><Download className="size-5" /></a>
-          </div>
-          <div className="relative flex-1 grid place-items-center p-2"
-            onPointerDown={() => setShowOrig(true)} onPointerUp={() => setShowOrig(false)} onPointerLeave={() => setShowOrig(false)}>
-            <img src={showOrig && open.original ? open.original : open.src} className="max-h-full max-w-full rounded-2xl object-contain" alt="" />
-            {open.original && <span className="glass absolute bottom-4 rounded-full px-3 py-1 text-[11px] text-muted-foreground">اضغط مطولاً لرؤية الأصل</span>}
-          </div>
-          <div className="glass-strong mx-auto mb-[max(env(safe-area-inset-bottom),20px)] flex gap-2 rounded-full p-1.5">
-            <button onClick={() => { onEdit(open); setOpen(null); }} className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground">
-              <Wand2 className="size-4" /> تعديل
-            </button>
-            <button onClick={() => { onDelete(open.id); setOpen(null); }} className="grid size-10 place-items-center rounded-full text-destructive">
-              <Trash2 className="size-5" />
-            </button>
-          </div>
-        </div>
-      )}
+
+      <div className="glass absolute inset-x-0 top-0 z-20 flex items-center justify-between border-x-0 border-t-0 px-4 pt-[max(env(safe-area-inset-top),14px)] pb-3">
+        <button onClick={onBack} className="glass grid size-10 place-items-center rounded-full"><ChevronLeft className="size-5 rotate-180" /></button>
+        <span className="text-[17px] font-semibold">Lumen</span>
+        <span className="size-10" />
+      </div>
+
+      <div className="glass-strong absolute bottom-[max(env(safe-area-inset-bottom),22px)] left-1/2 z-20 flex -translate-x-1/2 gap-1 rounded-full p-1.5">
+        {([["all", "الكل"], ["ai", "بالذكاء"], ["edit", "معدّلة"]] as const).map(([k, l]) => (
+          <button key={k} onClick={() => setFilter(k)} className={`rounded-full px-5 py-2 text-sm transition-all duration-300 ease-ios ${filter === k ? "bg-glass-strong font-semibold text-primary" : "text-muted-foreground"}`}>{l}</button>
+        ))}
+      </div>
+
+      {open && <Viewer photo={open} onClose={() => setOpen(null)} onEdit={() => { onEdit(open); setOpen(null); }}
+        onDelete={() => { onDelete(open.id); setOpen(null); toast.success("تم المسح"); }} />}
     </div>
   );
 }
 
-function Header({ title, onBack, right }: { title: string; onBack: () => void; right?: React.ReactNode }) {
+function Viewer({ photo, onClose, onEdit, onDelete }: { photo: Photo; onClose: () => void; onEdit: () => void; onDelete: () => void }) {
+  const [orig, setOrig] = useState(false);
+  const [chrome, setChrome] = useState(true);
   return (
-    <div className="sticky top-0 z-30 glass flex items-center justify-between border-x-0 border-t-0 px-4 pt-[max(env(safe-area-inset-top),14px)] pb-3">
-      <button onClick={onBack} className="flex items-center gap-1 text-primary"><ChevronLeft className="size-5 rotate-180" />الكاميرا</button>
-      <h1 className="text-[17px] font-semibold">{title}</h1>
-      <div className="min-w-16 flex justify-end">{right}</div>
+    <div className="pop-in fixed inset-0 z-40 bg-background" dir="rtl">
+      <div className="absolute inset-0 grid place-items-center"
+        onClick={() => setChrome((c) => !c)}
+        onPointerDown={() => setTimeout(() => setOrig(true), 0)} onPointerUp={() => setOrig(false)} onPointerLeave={() => setOrig(false)}>
+        <img src={orig && photo.original ? photo.original : photo.src} className="max-h-full max-w-full object-contain transition-opacity duration-300" alt="" />
+      </div>
+      <div className={`absolute inset-x-0 top-0 flex items-center px-4 pt-[max(env(safe-area-inset-top),14px)] pb-3 transition-all duration-500 ease-ios ${chrome ? "" : "-translate-y-full opacity-0"}`}>
+        <button onClick={onClose} className="glass flex h-10 items-center gap-1 rounded-full pl-4 pr-2 text-sm"><ChevronLeft className="size-5 rotate-180" />رجوع</button>
+        {photo.original && photo.original !== photo.src && <span className="glass mr-auto rounded-full px-3 py-1.5 text-[11px] text-muted-foreground">اضغط مطولاً للأصل</span>}
+      </div>
+      <div className={`absolute bottom-[max(env(safe-area-inset-bottom),22px)] left-1/2 -translate-x-1/2 transition-all duration-500 ease-ios ${chrome ? "" : "translate-y-[200%] opacity-0"}`}>
+        <div className="glass-strong flex gap-2 rounded-full p-2">
+          {([[Download, "حفظ", () => download(photo), ""], [Share2, "مشاركة", () => share(photo), ""], [Pencil, "تعديل", onEdit, "text-primary"], [Trash2, "مسح", onDelete, "text-destructive"]] as const).map(([I, l, fn, c]) => (
+            <button key={l} onClick={fn} className={`flex w-16 flex-col items-center gap-0.5 rounded-full py-1.5 text-[10px] transition ease-ios active:scale-90 ${c}`}><I className="size-5" />{l}</button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
 /* ---------------- Studio ---------------- */
-const CROPS = [{ l: "أصلي", v: 0 }, { l: "1:1", v: 1 }, { l: "4:5", v: 4 / 5 }, { l: "3:4", v: 3 / 4 }, { l: "16:9", v: 16 / 9 }, { l: "9:16", v: 9 / 16 }];
+const CROPS = [{ l: "حر", v: 0 }, { l: "1:1", v: 1 }, { l: "4:5", v: 4 / 5 }, { l: "3:4", v: 3 / 4 }, { l: "2:3", v: 2 / 3 }, { l: "9:16", v: 9 / 16 }, { l: "4:3", v: 4 / 3 }, { l: "16:9", v: 16 / 9 }];
 const ADJ = [
-  { k: "brightness", l: "السطوع", min: 50, max: 150 },
-  { k: "contrast", l: "التباين", min: 50, max: 150 },
-  { k: "saturate", l: "التشبع", min: 0, max: 200 },
-  { k: "warmth", l: "الدفء", min: -50, max: 50 },
+  { k: "exposure", l: "التعريض", min: -50, max: 50, d: 0 },
+  { k: "brightness", l: "السطوع", min: 50, max: 150, d: 100 },
+  { k: "contrast", l: "التباين", min: 50, max: 150, d: 100 },
+  { k: "saturate", l: "التشبع", min: 0, max: 200, d: 100 },
+  { k: "warmth", l: "الدفء", min: -50, max: 50, d: 0 },
+  { k: "tint", l: "الصبغة", min: -90, max: 90, d: 0 },
+  { k: "fade", l: "البهتان", min: 0, max: 60, d: 0 },
+  { k: "mono", l: "أبيض وأسود", min: 0, max: 100, d: 0 },
+  { k: "blur", l: "النعومة", min: 0, max: 10, d: 0 },
+  { k: "vignette", l: "التظليل", min: 0, max: 80, d: 0 },
 ] as const;
+type Adj = Record<(typeof ADJ)[number]["k"], number>;
+const ADJ0 = Object.fromEntries(ADJ.map((a) => [a.k, a.d])) as Adj;
+const PRESETS: { l: string; a: Partial<Adj> }[] = [
+  { l: "أصلي", a: {} }, { l: "زاهي", a: { saturate: 140, contrast: 110 } }, { l: "دافئ", a: { warmth: 30, brightness: 104 } },
+  { l: "بارد", a: { warmth: -30, tint: 10 } }, { l: "دراما", a: { contrast: 140, saturate: 80, vignette: 50 } },
+  { l: "فضي", a: { mono: 100, contrast: 120 } }, { l: "نوار", a: { mono: 100, contrast: 150, brightness: 90, vignette: 60 } },
+  { l: "فيلم", a: { fade: 25, warmth: 15, saturate: 85 } }, { l: "حالم", a: { blur: 1, brightness: 110, fade: 20 } }, { l: "غروب", a: { warmth: 45, tint: -15, saturate: 120 } },
+];
+const cssOf = (a: Adj) => `brightness(${(a.brightness + a.exposure) / 100}) contrast(${(a.contrast - a.fade * 0.5) / 100}) saturate(${a.saturate / 100}) sepia(${Math.max(0, a.warmth) / 100}) hue-rotate(${a.tint + (a.warmth < 0 ? a.warmth : 0)}deg) grayscale(${a.mono / 100}) blur(${a.blur}px)`;
 
-function Studio({ photos, photo, setPhoto, onBack, onPaywall, runAI, onSaved }: {
-  photos: Photo[]; photo: Photo | null; setPhoto: (p: Photo | null) => void; onBack: () => void; onPaywall: () => void;
+function Thumb({ m, src }: { m: AIMode; src: string }) {
+  if (m.thumb) return <img src={m.thumb} className="h-full w-full object-cover" alt="" loading="lazy" />;
+  if (m.tile !== undefined) return <span className="block h-full w-full" style={{ backgroundImage: `url(${effectsGrid})`, backgroundSize: "400% 400%", backgroundPosition: `${(m.tile % 4) * 33.333}% ${Math.floor(m.tile / 4) * 33.333}%` }} />;
+  return <img src={src} className="h-full w-full object-cover saturate-150" alt="" />;
+}
+
+function Studio({ photos, photo, setPhoto, modes, onBack, onPaywall, runAI, onSaved }: {
+  photos: Photo[]; photo: Photo | null; setPhoto: (p: Photo | null) => void; modes: AIMode[]; onBack: () => void; onPaywall: () => void;
   runAI: (src: string, prompt: string, label: string, original?: string) => Promise<Photo | null>; onSaved: () => void;
 }) {
-  const [tab, setTab] = useState<"ai" | "crop" | "adjust">("ai");
+  const [tab, setTab] = useState<"ai" | "filters" | "adjust" | "crop">("ai");
+  const [cat, setCat] = useState("الكل");
   const [crop, setCrop] = useState(0);
-  const [adj, setAdj] = useState({ brightness: 100, contrast: 100, saturate: 100, warmth: 0 });
+  const [rotate, setRotate] = useState(0);
+  const [flip, setFlip] = useState({ x: false, y: false });
+  const [adj, setAdj] = useState<Adj>(ADJ0);
+  const [active, setActive] = useState<(typeof ADJ)[number]["k"]>("exposure");
   const [busy, setBusy] = useState(false);
   const [ad, setAd] = useState<null | (() => void)>(null);
   const [left, setLeft] = useState(DAILY_TRIALS);
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => setLeft(trialsLeft()), [ad]);
-
-  const cssFilter = `brightness(${adj.brightness}%) contrast(${adj.contrast}%) saturate(${adj.saturate}%) sepia(${Math.max(0, adj.warmth)}%) hue-rotate(${adj.warmth < 0 ? adj.warmth : 0}deg)`;
+  const cats = ["الكل", ...CATEGORIES.filter((c) => modes.some((m) => m.category === c)), ...[...new Set(modes.map((m) => m.category))].filter((c) => !CATEGORIES.includes(c))];
 
   if (!photo) {
     return (
       <div className="h-full overflow-y-auto pb-20" dir="rtl">
-        <Header title="اختر صورة" onBack={onBack}
-          right={<button onClick={() => fileRef.current?.click()} className="text-primary text-sm">من الجهاز</button>} />
+        <div className="glass sticky top-0 z-30 flex items-center justify-between border-x-0 border-t-0 px-4 pt-[max(env(safe-area-inset-top),14px)] pb-3">
+          <button onClick={onBack} className="glass grid size-10 place-items-center rounded-full"><ChevronLeft className="size-5 rotate-180" /></button>
+          <h1 className="text-[17px] font-semibold">اختر صورة</h1>
+          <button onClick={() => fileRef.current?.click()} className="text-sm text-primary">من الجهاز</button>
+        </div>
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => {
           const f = e.target.files?.[0]; if (!f) return;
           const r = new FileReader();
-          r.onload = async () => setPhoto({ id: uid(), src: await downscale(r.result as string), createdAt: Date.now() });
+          r.onload = async () => setPhoto({ id: uid(), src: await render(r.result as string), createdAt: Date.now() });
           r.readAsDataURL(f);
         }} />
         {photos.length === 0 && <p className="mt-32 text-center text-muted-foreground">المعرض فارغ — ارفع صورة من جهازك</p>}
-        <div className="grid grid-cols-3 gap-0.5 px-0.5">
+        <div className="grid grid-cols-3 gap-[3px] p-[3px]">
           {photos.filter((p) => !p.pending).map((p) => (
-            <button key={p.id} onClick={() => setPhoto(p)} className="aspect-square overflow-hidden"><img src={p.src} className="h-full w-full object-cover" alt="" /></button>
+            <button key={p.id} onClick={() => setPhoto(p)} className="aspect-square overflow-hidden rounded-[6px]"><img src={p.src} className="h-full w-full object-cover" alt="" /></button>
           ))}
         </div>
       </div>
     );
   }
 
-  const applyEffect = (e: (typeof EFFECTS)[number]) => {
-    const go = async () => {
-      setBusy(true);
-      const res = await runAI(photo.src, e.prompt, e.name, photo.src);
-      setBusy(false);
-      if (res) setPhoto(res);
-    };
+  const reset = () => { setCrop(0); setRotate(0); setFlip({ x: false, y: false }); setAdj(ADJ0); };
+  const applyEffect = (m: AIMode) => {
+    const go = async () => { setBusy(true); const res = await runAI(photo.src, m.prompt, m.name, photo.src); setBusy(false); if (res) setPhoto(res); };
     if (isPro()) return go();
     if (trialsLeft() <= 0) return onPaywall();
     setAd(() => () => { consumeTrial(); go(); });
   };
-
   const saveManual = async () => {
-    const out = await downscale(photo.src, 2048, crop || undefined, cssFilter);
+    const out = await render(photo.src, { crop, rotate, flipX: flip.x, flipY: flip.y, filter: cssOf(adj), vignette: adj.vignette }, 2048);
     const p: Photo = { id: uid(), src: out, original: photo.src, createdAt: Date.now(), label: "معدّلة" };
-    await savePhoto(p); onSaved(); setPhoto(p);
-    setCrop(0); setAdj({ brightness: 100, contrast: 100, saturate: 100, warmth: 0 });
+    await savePhoto(p); onSaved(); setPhoto(p); reset();
     toast.success("تم الحفظ في المعرض");
   };
+  const cur = ADJ.find((a) => a.k === active)!;
+  const shown = modes.filter((m) => cat === "الكل" || m.category === cat);
 
   return (
     <div className="flex h-full flex-col" dir="rtl">
       <div className="flex items-center justify-between px-4 pt-[max(env(safe-area-inset-top),14px)] pb-2">
-        <button onClick={() => setPhoto(null)} className="glass rounded-full px-4 py-2 text-sm">إلغاء</button>
-        <span className="glass flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs">
-          {isPro() ? <><Crown className="size-3.5 text-primary" /> Pro</> : <>متبقي اليوم: {left}/{DAILY_TRIALS}</>}
-        </span>
+        <button onClick={() => { reset(); setPhoto(null); }} className="glass rounded-full px-4 py-2 text-sm">إلغاء</button>
+        <button onClick={onPaywall} className="glass flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs">
+          {isPro() ? <><Crown className="size-3.5 text-primary" /> Pro</> : <>متبقي اليوم {left}/{DAILY_TRIALS}</>}
+        </button>
         <button onClick={saveManual} className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">تم</button>
       </div>
 
-      <div className="relative flex-1 grid place-items-center overflow-hidden p-4">
-        <div className="relative max-h-full max-w-full overflow-hidden rounded-2xl" style={crop ? { aspectRatio: String(crop), height: crop < 1 ? "100%" : undefined, width: crop >= 1 ? "100%" : undefined } : undefined}>
-          <img src={photo.src} style={{ filter: cssFilter }} className={`h-full w-full ${crop ? "object-cover" : "object-contain max-h-[60vh]"} ${busy ? "blur-md scale-105" : ""} transition`} alt="" />
+      <div className="relative grid flex-1 place-items-center overflow-hidden p-4">
+        <div className="relative max-h-full max-w-full overflow-hidden rounded-2xl transition-all duration-500 ease-ios"
+          style={{ ...(crop ? { aspectRatio: String(crop), height: crop < 1 ? "100%" : undefined, width: crop >= 1 ? "100%" : undefined } : {}), transform: `rotate(${rotate}deg) scale(${flip.x ? -1 : 1}, ${flip.y ? -1 : 1})` }}>
+          <img src={photo.src} style={{ filter: cssOf(adj) }} className={`h-full w-full ${crop ? "object-cover" : "max-h-[55vh] object-contain"} ${busy ? "scale-105 blur-md" : ""} transition`} alt="" />
+          {adj.vignette > 0 && <div className="pointer-events-none absolute inset-0" style={{ boxShadow: `inset 0 0 ${adj.vignette * 2}px ${adj.vignette}px oklch(0 0 0 / ${adj.vignette / 100})` }} />}
           {busy && <div className="shimmer absolute inset-0 grid place-items-center"><span className="glass flex items-center gap-2 rounded-full px-4 py-2 text-sm"><Sparkles className="size-4 animate-spin text-primary" /> جاري السحر…</span></div>}
         </div>
       </div>
 
-      <div className="min-h-[150px] px-3">
+      <div key={tab} className="pop-in min-h-[170px] px-3">
         {tab === "ai" && (
-          <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:none]">
-            {EFFECTS.map((e) => (
-              <button key={e.id} disabled={busy} onClick={() => applyEffect(e)} className="flex shrink-0 flex-col items-center gap-1.5 disabled:opacity-40">
-                <span className="glass grid size-[68px] place-items-center rounded-2xl text-3xl transition active:scale-90">{e.emoji}</span>
-                <span className="text-[11px] text-muted-foreground">{e.name}</span>
-              </button>
-            ))}
-          </div>
+          <>
+            <div className="mb-2 flex gap-1.5 overflow-x-auto [scrollbar-width:none]">
+              {cats.map((c) => <button key={c} onClick={() => setCat(c)} className={`shrink-0 rounded-full px-3 py-1 text-xs transition ease-ios ${cat === c ? "bg-foreground text-background" : "glass text-muted-foreground"}`}>{c}</button>)}
+            </div>
+            <div className="flex gap-2.5 overflow-x-auto pb-2 [scrollbar-width:none]">
+              {shown.map((m) => (
+                <button key={m.id} disabled={busy} onClick={() => applyEffect(m)} className="flex shrink-0 flex-col items-center gap-1.5 disabled:opacity-40">
+                  <span className="glass block size-[76px] overflow-hidden rounded-2xl p-0 transition ease-ios active:scale-90"><Thumb m={m} src={photo.src} /></span>
+                  <span className="w-[76px] truncate text-center text-[11px] text-muted-foreground">{m.name}</span>
+                </button>
+              ))}
+            </div>
+          </>
         )}
-        {tab === "crop" && (
-          <div className="flex flex-wrap justify-center gap-2 pt-4">
-            {CROPS.map((c) => (
-              <button key={c.l} onClick={() => setCrop(c.v)} className={`rounded-full px-4 py-2 text-sm ${crop === c.v ? "bg-primary text-primary-foreground" : "glass"}`}>{c.l}</button>
-            ))}
+        {tab === "filters" && (
+          <div className="flex gap-2.5 overflow-x-auto pb-2 pt-2 [scrollbar-width:none]">
+            {PRESETS.map((p) => {
+              const a = { ...ADJ0, ...p.a };
+              const on = JSON.stringify(a) === JSON.stringify(adj);
+              return (
+                <button key={p.l} onClick={() => setAdj(a)} className="flex shrink-0 flex-col items-center gap-1.5">
+                  <span className={`block size-[72px] overflow-hidden rounded-2xl border-2 transition ease-ios ${on ? "border-primary" : "border-transparent"}`}><img src={photo.src} style={{ filter: cssOf(a) }} className="h-full w-full object-cover" alt="" /></span>
+                  <span className={`text-[11px] ${on ? "text-primary" : "text-muted-foreground"}`}>{p.l}</span>
+                </button>
+              );
+            })}
           </div>
         )}
         {tab === "adjust" && (
-          <div className="space-y-2 pt-1">
-            {ADJ.map((a) => (
-              <label key={a.k} className="flex items-center gap-3 text-xs">
-                <span className="w-14 text-muted-foreground">{a.l}</span>
-                <input type="range" min={a.min} max={a.max} value={adj[a.k]} onChange={(e) => setAdj({ ...adj, [a.k]: +e.target.value })} className="flex-1 accent-primary" />
-              </label>
-            ))}
+          <div className="pt-1">
+            <div className="flex gap-2 overflow-x-auto pb-3 [scrollbar-width:none]">
+              {ADJ.map((a) => (
+                <button key={a.k} onClick={() => setActive(a.k)} className="flex shrink-0 flex-col items-center gap-1">
+                  <span className={`grid size-12 place-items-center rounded-full border text-[11px] tabular-nums transition ease-ios ${active === a.k ? "border-primary text-primary" : "border-glass-border text-muted-foreground"}`}>{adj[a.k] - a.d}</span>
+                  <span className="text-[10px] text-muted-foreground">{a.l}</span>
+                </button>
+              ))}
+            </div>
+            <input type="range" min={cur.min} max={cur.max} value={adj[cur.k]} onChange={(e) => setAdj({ ...adj, [cur.k]: +e.target.value })} onDoubleClick={() => setAdj({ ...adj, [cur.k]: cur.d })} className="w-full accent-primary" />
+          </div>
+        )}
+        {tab === "crop" && (
+          <div className="space-y-3 pt-2">
+            <div className="flex justify-center gap-3">
+              {([[RotateCw, "تدوير", () => setRotate((r) => r + 90)], [FlipHorizontal, "عكس أفقي", () => setFlip((f) => ({ ...f, x: !f.x }))], [FlipVertical, "عكس رأسي", () => setFlip((f) => ({ ...f, y: !f.y }))], [X, "إعادة", reset]] as const).map(([I, l, fn]) => (
+                <button key={l} onClick={fn} className="flex flex-col items-center gap-1 text-[10px] text-muted-foreground"><span className="glass grid size-11 place-items-center rounded-full"><I className="size-5 text-foreground" /></span>{l}</button>
+              ))}
+            </div>
+            <div className="flex gap-2 overflow-x-auto [scrollbar-width:none]">
+              {CROPS.map((c) => <button key={c.l} onClick={() => setCrop(c.v)} className={`shrink-0 rounded-full px-4 py-2 text-sm transition ease-ios ${crop === c.v ? "bg-primary text-primary-foreground" : "glass"}`}>{c.l}</button>)}
+            </div>
           </div>
         )}
       </div>
 
       <div className="glass-strong mx-auto mb-[max(env(safe-area-inset-bottom),18px)] flex gap-1 rounded-full p-1.5">
-        {([["ai", "ذكاء", Sparkles], ["crop", "قص", Crop], ["adjust", "تعديل", SlidersHorizontal]] as const).map(([k, l, I]) => (
-          <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm transition ${tab === k ? "bg-glass-strong text-primary" : "text-muted-foreground"}`}>
-            <I className="size-4" />{l}
-          </button>
+        {([["ai", "ذكاء", Sparkles], ["filters", "فلاتر", Palette], ["adjust", "ضبط", SlidersHorizontal], ["crop", "قص", Crop]] as const).map(([k, l, I]) => (
+          <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm transition-all duration-300 ease-ios ${tab === k ? "bg-glass-strong text-primary" : "text-muted-foreground"}`}><I className="size-4" />{l}</button>
         ))}
       </div>
 
@@ -421,17 +586,13 @@ function Studio({ photos, photo, setPhoto, onBack, onPaywall, runAI, onSaved }: 
   );
 }
 
-/* ---------------- Ad + Paywall ---------------- */
+/* ---------------- Ad ---------------- */
 function AdModal({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
   const [t, setT] = useState(5);
-  useEffect(() => {
-    if (t <= 0) return;
-    const id = setTimeout(() => setT(t - 1), 1000);
-    return () => clearTimeout(id);
-  }, [t]);
+  useEffect(() => { if (t <= 0) return; const id = setTimeout(() => setT(t - 1), 1000); return () => clearTimeout(id); }, [t]);
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-scrim p-6 backdrop-blur-xl" dir="rtl">
-      <div className="glass-strong w-full max-w-sm rounded-[2rem] p-6 text-center">
+      <div className="glass-strong pop-in w-full max-w-sm rounded-[2rem] p-6 text-center">
         <p className="text-xs text-muted-foreground">إعلان</p>
         <div className="my-5 grid aspect-video place-items-center rounded-2xl bg-muted"><span className="text-4xl">📺</span></div>
         <p className="text-sm">شاهد الإعلان لفتح تجربة مجانية</p>
@@ -440,30 +601,74 @@ function AdModal({ onDone, onCancel }: { onDone: () => void; onCancel: () => voi
             <button onClick={onCancel} className="text-sm text-muted-foreground">إلغاء</button>
             <span className="glass rounded-full px-4 py-2 text-sm tabular-nums">{t} ث</span>
           </div>
-        ) : (
-          <button onClick={onDone} className="mt-5 w-full rounded-full bg-primary py-3 font-semibold text-primary-foreground">متابعة</button>
-        )}
+        ) : <button onClick={onDone} className="mt-5 w-full rounded-full bg-primary py-3 font-semibold text-primary-foreground">متابعة</button>}
       </div>
     </div>
   );
 }
 
-function Paywall({ onClose }: { onClose: () => void }) {
+/* ---------------- Subscription ---------------- */
+function ProPage({ prices, onClose }: { prices: { monthly: number; yearly: number; currency: string }; onClose: () => void }) {
+  const [plan, setPlan] = useState<"monthly" | "yearly">("yearly");
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const checkout = useServerFn(createCheckout);
+  useEffect(() => {
+    const h = (e: MessageEvent) => {
+      if (e.origin !== location.origin || e.data?.type !== "lumen-pay") return;
+      setUrl(null);
+      if (e.data.success) { setPro(); toast.success("أهلاً بك في Lumen Pro 👑"); onClose(); } else toast.error("لم يكتمل الدفع");
+    };
+    addEventListener("message", h); return () => removeEventListener("message", h);
+  }, [onClose]);
+  const subscribe = async () => {
+    setLoading(true);
+    const r = await checkout({ data: { plan } }).catch(() => ({ error: "تعذر بدء الدفع" }));
+    setLoading(false);
+    if ("url" in r && r.url) setUrl(r.url); else toast.error("error" in r ? r.error : "تعذر بدء الدفع");
+  };
+  const cur = prices.currency;
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-scrim backdrop-blur-xl" dir="rtl">
-      <div className="glass-strong w-full rounded-t-[2.5rem] p-7 pb-[max(env(safe-area-inset-bottom),28px)]">
-        <button onClick={onClose} className="glass mb-2 grid size-9 place-items-center rounded-full"><X className="size-4" /></button>
-        <Crown className="mx-auto size-12 text-primary" />
-        <h2 className="mt-3 text-center text-2xl font-bold">Lumen Pro</h2>
-        <p className="mt-1 text-center text-sm text-muted-foreground">خلصت تجاربك المجانية لليوم</p>
-        <ul className="mt-6 space-y-3 text-sm">
-          {["كل التأثيرات بلا حدود", "بدون إعلانات", "أعلى جودة للصور", "تأثيرات جديدة كل أسبوع"].map((x) => (
-            <li key={x} className="flex items-center gap-2"><Check className="size-4 text-primary" />{x}</li>
+    <div className="relative h-full overflow-hidden" dir="ltr">
+      <img src={paywallBg} className="absolute inset-0 h-full w-full object-cover" alt="" width={1024} height={1792} />
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-scrim" />
+      <button onClick={onClose} className="glass absolute left-4 top-[max(env(safe-area-inset-top),14px)] z-10 grid size-10 place-items-center rounded-full"><X className="size-5" /></button>
+      <div className="relative flex h-full flex-col px-5 pt-[calc(max(env(safe-area-inset-top),14px)+56px)] pb-[max(env(safe-area-inset-bottom),22px)]">
+        <h1 className="text-center text-5xl font-light tracking-tight">lumen <span className="rounded-md border-2 border-foreground px-2 text-4xl">pro</span></h1>
+        <p className="mx-auto mt-3 max-w-[18rem] text-center text-[17px] leading-snug">صوّر وحوّل صورك بلا حدود مع استوديو الذكاء الاصطناعي.</p>
+        <div className="flex-1" />
+        <ul className="mb-5 space-y-3 text-[17px] font-semibold" dir="rtl">
+          {["تحويلات الذكاء الاصطناعي بلا حدود", "بدون إعلانات نهائياً", "أعلى جودة وأوضاع جديدة كل أسبوع"].map((x) => (
+            <li key={x} className="flex items-center gap-3 [text-shadow:0_1px_8px_var(--scrim)]"><Check className="size-5" strokeWidth={3} />{x}</li>
           ))}
         </ul>
-        <button onClick={() => toast.info("الاشتراك سيُفعّل قريباً")} className="mt-7 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">اشترك شهرياً</button>
-        <p className="mt-3 text-center text-xs text-muted-foreground">أو ارجع بكرة لتجربتين مجانيتين</p>
+        <div className="grid grid-cols-2 gap-3">
+          {([["monthly", "Monthly", prices.monthly, "شهرياً", "يتجدد كل شهر"], ["yearly", "Yearly", prices.yearly, "يُدفع سنوياً", `${(prices.yearly / 12).toFixed(0)} ${cur} / شهر`]] as const).map(([k, l, p, s1, s2]) => (
+            <button key={k} onClick={() => setPlan(k)}
+              className={`glass rounded-3xl p-4 text-left transition-all duration-300 ease-ios ${plan === k ? "scale-[1.02] ring-2 ring-foreground" : "opacity-80"}`}>
+              <p className="text-lg">{l}</p>
+              <p className="mt-1 text-3xl font-semibold tabular-nums">{p}<span className="text-base"> {cur}</span></p>
+              <p className="mt-2 text-xs text-muted-foreground" dir="rtl">{s1}</p>
+              <p className="mt-3 text-xs" dir="rtl">{s2}</p>
+            </button>
+          ))}
+        </div>
+        <button onClick={subscribe} disabled={loading} className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-pro py-4 text-lg font-semibold text-pro-foreground transition ease-ios active:scale-[.98]">
+          {loading ? <Loader2 className="size-5 animate-spin" /> : <>اشترك الآن <ChevronLeft className="size-5 rotate-180" /></>}
+        </button>
       </div>
+
+      {url && (
+        <div className="fixed inset-0 z-50 flex items-end bg-scrim backdrop-blur-md">
+          <div className="sheet-up glass-strong flex h-[88%] w-full flex-col overflow-hidden rounded-t-[2rem]">
+            <div className="flex items-center justify-between px-4 py-3" dir="rtl">
+              <span className="font-semibold">الدفع الآمن</span>
+              <button onClick={() => setUrl(null)} className="glass grid size-9 place-items-center rounded-full"><X className="size-4" /></button>
+            </div>
+            <iframe src={url} title="الدفع" className="w-full flex-1 bg-background" allow="payment" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
