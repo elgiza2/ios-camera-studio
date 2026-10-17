@@ -8,8 +8,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { aiEditImage, getPublicConfig } from "@/lib/ai.functions";
-import { createCheckout } from "@/lib/pay.functions";
-import { CAMERA_PROMPT, consumeTrial, deletePhoto, isPro, listPhotos, savePhoto, setPro, trialsLeft, DAILY_TRIALS, type Photo } from "@/lib/store";
+import { verifyDeviceSubscription } from "@/lib/pay.functions";
+import { SubscriptionPage } from "@/components/subscription-page";
+import { CAMERA_PROMPT, consumeTrial, deletePhoto, isPro, listPhotos, savePhoto, setPro, deviceToken, trialsLeft, DAILY_TRIALS, type Photo } from "@/lib/store";
 import { DEFAULT_MODES, CATEGORIES, type AIMode } from "@/lib/modes";
 import effectsGrid from "@/assets/effects-grid.jpg";
 import paywallBg from "@/assets/paywall.jpg";
@@ -77,12 +78,17 @@ function App() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [studioPhoto, setStudioPhoto] = useState<Photo | null>(null);
   const [modes, setModes] = useState<AIMode[]>(DEFAULT_MODES);
-  const [prices, setPrices] = useState({ monthly: 150, yearly: 1200, currency: "EGP" });
+  const verifySubscription = useServerFn(verifyDeviceSubscription);
   const edit = useServerFn(aiEditImage);
   const cfgFn = useServerFn(getPublicConfig);
 
   const refresh = useCallback(() => listPhotos().then(setPhotos), []);
-  useEffect(() => { refresh(); cfgFn().then((c) => { if (c.modes.length) setModes(c.modes); setPrices(c.prices); }).catch(() => {}); }, [refresh, cfgFn]);
+  useEffect(() => { refresh(); cfgFn().then((c) => { if (c.modes.length) setModes(c.modes); }).catch(() => {}); }, [refresh, cfgFn]);
+
+  useEffect(() => {
+    const orderId = localStorage.getItem("lumen_pending_order");
+    verifySubscription({ data: { device: deviceToken(), ...(orderId ? { orderId } : {}) } }).then(r => setPro(r.expiresAt)).catch(() => setPro(null));
+  }, [verifySubscription]);
 
   const runAI = useCallback(async (source: string, prompt: string, label: string, original?: string) => {
     const id = uid();
@@ -120,7 +126,7 @@ function App() {
           <Studio photos={photos} photo={studioPhoto} setPhoto={setStudioPhoto} modes={modes} onBack={() => setView("camera")}
             onPaywall={() => setView("pro")} runAI={runAI} onSaved={refresh} />
         )}
-        {view === "pro" && <ProPage prices={prices} onClose={() => setView("camera")} />}
+        {view === "pro" && <SubscriptionPage onClose={() => setView("camera")} />}
       </div>
     </div>
   );
@@ -591,68 +597,3 @@ function AdModal({ onDone, onCancel }: { onDone: () => void; onCancel: () => voi
   );
 }
 
-/* ---------------- Subscription ---------------- */
-function ProPage({ prices, onClose }: { prices: { monthly: number; yearly: number; currency: string }; onClose: () => void }) {
-  const [plan, setPlan] = useState<"monthly" | "yearly">("yearly");
-  const [url, setUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const checkout = useServerFn(createCheckout);
-  useEffect(() => {
-    const h = (e: MessageEvent) => {
-      if (e.origin !== location.origin || e.data?.type !== "lumen-pay") return;
-      setUrl(null);
-      if (e.data.success) { setPro(); toast.success("أهلاً بك في Lumen Pro 👑"); onClose(); } else toast.error("لم يكتمل الدفع");
-    };
-    addEventListener("message", h); return () => removeEventListener("message", h);
-  }, [onClose]);
-  const subscribe = async () => {
-    setLoading(true);
-    const r = await checkout({ data: { plan } }).catch(() => ({ error: "تعذر بدء الدفع" }));
-    setLoading(false);
-    if ("url" in r && r.url) setUrl(r.url); else toast.error("error" in r ? r.error : "تعذر بدء الدفع");
-  };
-  const cur = prices.currency;
-  return (
-    <div className="relative h-full overflow-hidden" dir="ltr">
-      <img src={paywallBg} className="absolute inset-0 h-full w-full object-cover" alt="" width={1024} height={1792} />
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-scrim" />
-      <button onClick={onClose} className="glass absolute left-4 top-[max(env(safe-area-inset-top),14px)] z-10 grid size-10 place-items-center rounded-full"><X className="size-5" /></button>
-      <div className="relative flex h-full flex-col px-5 pt-[calc(max(env(safe-area-inset-top),14px)+56px)] pb-[max(env(safe-area-inset-bottom),22px)]">
-        <h1 className="text-center text-5xl font-light tracking-tight">lumen <span className="rounded-md border-2 border-foreground px-2 text-4xl">pro</span></h1>
-        <p className="mx-auto mt-3 max-w-[18rem] text-center text-[17px] leading-snug">صوّر وحوّل صورك بلا حدود مع استوديو الذكاء الاصطناعي.</p>
-        <div className="flex-1" />
-        <ul className="mb-5 space-y-3 text-[17px] font-semibold" dir="rtl">
-          {["تحويلات الذكاء الاصطناعي بلا حدود", "بدون إعلانات نهائياً", "أعلى جودة وأوضاع جديدة كل أسبوع"].map((x) => (
-            <li key={x} className="flex items-center gap-3 [text-shadow:0_1px_8px_var(--scrim)]"><Check className="size-5" strokeWidth={3} />{x}</li>
-          ))}
-        </ul>
-        <div className="grid grid-cols-2 gap-3">
-          {([["monthly", "Monthly", prices.monthly, "شهرياً", "يتجدد كل شهر"], ["yearly", "Yearly", prices.yearly, "يُدفع سنوياً", `${(prices.yearly / 12).toFixed(0)} ${cur} / شهر`]] as const).map(([k, l, p, s1, s2]) => (
-            <button key={k} onClick={() => setPlan(k)}
-              className={`glass rounded-3xl p-4 text-left transition-all duration-300 ease-ios ${plan === k ? "scale-[1.02] ring-2 ring-foreground" : "opacity-80"}`}>
-              <p className="text-lg">{l}</p>
-              <p className="mt-1 text-3xl font-semibold tabular-nums">{p}<span className="text-base"> {cur}</span></p>
-              <p className="mt-2 text-xs text-muted-foreground" dir="rtl">{s1}</p>
-              <p className="mt-3 text-xs" dir="rtl">{s2}</p>
-            </button>
-          ))}
-        </div>
-        <button onClick={subscribe} disabled={loading} className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-pro py-4 text-lg font-semibold text-pro-foreground transition ease-ios active:scale-[.98]">
-          {loading ? <Loader2 className="size-5 animate-spin" /> : <>اشترك الآن <ChevronLeft className="size-5 rotate-180" /></>}
-        </button>
-      </div>
-
-      {url && (
-        <div className="fixed inset-0 z-50 flex items-end bg-scrim backdrop-blur-md">
-          <div className="sheet-up glass-strong flex h-[88%] w-full flex-col overflow-hidden rounded-t-[2rem]">
-            <div className="flex items-center justify-between px-4 py-3" dir="rtl">
-              <span className="font-semibold">الدفع الآمن</span>
-              <button onClick={() => setUrl(null)} className="glass grid size-9 place-items-center rounded-full"><X className="size-4" /></button>
-            </div>
-            <iframe src={url} title="الدفع" className="w-full flex-1 bg-background" allow="payment" />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}

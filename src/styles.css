@@ -208,3 +208,7 @@ html, body { background: var(--background); color: var(--foreground); font-famil
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+:root { --payment-brand-a: oklch(0.6 0.23 25); --payment-brand-b: oklch(0.8 0.18 80); }
+.mastercard-mark i { width: 20px; height: 20px; border-radius: 50%; background: var(--payment-brand-a); }
+.mastercard-mark i + i { margin-left: -7px; background: var(--payment-brand-b); opacity: .9; }
