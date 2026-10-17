@@ -142,3 +142,51 @@
     color: var(--color-foreground);
   }
 }
+
+/* ===== Lumen Camera — iOS glass design system ===== */
+:root {
+  --background: oklch(0.08 0 0);
+  --foreground: oklch(0.98 0 0);
+  --primary: oklch(0.86 0.17 92);
+  --primary-foreground: oklch(0.15 0 0);
+  --muted: oklch(0.22 0 0);
+  --muted-foreground: oklch(0.72 0 0);
+  --accent: oklch(0.86 0.17 92);
+  --destructive: oklch(0.65 0.22 25);
+  --border: oklch(1 0 0 / 0.14);
+  --glass: oklch(1 0 0 / 0.1);
+  --glass-strong: oklch(1 0 0 / 0.18);
+  --glass-border: oklch(1 0 0 / 0.22);
+  --shutter: oklch(0.98 0 0);
+  --scrim: oklch(0 0 0 / 0.55);
+  --radius: 1.25rem;
+}
+@theme inline {
+  --color-glass: var(--glass);
+  --color-glass-strong: var(--glass-strong);
+  --color-glass-border: var(--glass-border);
+  --color-shutter: var(--shutter);
+  --color-scrim: var(--scrim);
+  --font-sans: -apple-system, "SF Pro Display", "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+}
+html, body { background: var(--background); color: var(--foreground); font-family: var(--font-sans); overscroll-behavior: none; }
+@utility glass {
+  background: var(--glass);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.25), 0 10px 40px -10px oklch(0 0 0 / 0.6);
+}
+@utility glass-strong {
+  background: var(--glass-strong);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.3), 0 20px 60px -15px oklch(0 0 0 / 0.7);
+}
+@keyframes shimmer { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
+@utility shimmer {
+  background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.25), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
