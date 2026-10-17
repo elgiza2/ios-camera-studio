@@ -10,33 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as KRouteImport } from './routes/k'
+import { Route as PayDoneRouteImport } from './routes/pay-done'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KRoute = KRouteImport.update({
+  id: '/k',
+  path: '/k',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PayDoneRoute = PayDoneRouteImport.update({
+  id: '/pay-done',
+  path: '/pay-done',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/k': typeof KRoute
+  '/pay-done': typeof PayDoneRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/k': typeof KRoute
+  '/pay-done': typeof PayDoneRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/k': typeof KRoute
+  '/pay-done': typeof PayDoneRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/k' | '/pay-done'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/k' | '/pay-done'
+  id: '__root__' | '/' | '/k' | '/pay-done'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  KRoute: typeof KRoute
+  PayDoneRoute: typeof PayDoneRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +68,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/k': {
+      id: '/k'
+      path: '/k'
+      fullPath: '/k'
+      preLoaderRoute: typeof KRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pay-done': {
+      id: '/pay-done'
+      path: '/pay-done'
+      fullPath: '/pay-done'
+      preLoaderRoute: typeof PayDoneRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  KRoute: KRoute,
+  PayDoneRoute: PayDoneRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
