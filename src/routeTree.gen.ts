@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as KRouteImport } from './routes/k'
 import { Route as PayDoneRouteImport } from './routes/pay-done'
+import { Route as ApiPublicDodoWebhookRouteImport } from './routes/api/public/dodo-webhook'
+import { Route as ApiPublicKashierWebhookRouteImport } from './routes/api/public/kashier-webhook'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +30,69 @@ const PayDoneRoute = PayDoneRouteImport.update({
   path: '/pay-done',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicDodoWebhookRoute = ApiPublicDodoWebhookRouteImport.update({
+  id: '/api/public/dodo-webhook',
+  path: '/api/public/dodo-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicKashierWebhookRoute = ApiPublicKashierWebhookRouteImport.update({
+  id: '/api/public/kashier-webhook',
+  path: '/api/public/kashier-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/k': typeof KRoute
   '/pay-done': typeof PayDoneRoute
+  '/api/public/dodo-webhook': typeof ApiPublicDodoWebhookRoute
+  '/api/public/kashier-webhook': typeof ApiPublicKashierWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/k': typeof KRoute
   '/pay-done': typeof PayDoneRoute
+  '/api/public/dodo-webhook': typeof ApiPublicDodoWebhookRoute
+  '/api/public/kashier-webhook': typeof ApiPublicKashierWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/k': typeof KRoute
   '/pay-done': typeof PayDoneRoute
+  '/api/public/dodo-webhook': typeof ApiPublicDodoWebhookRoute
+  '/api/public/kashier-webhook': typeof ApiPublicKashierWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/k' | '/pay-done'
+  fullPaths:
+    | '/'
+    | '/k'
+    | '/pay-done'
+    | '/api/public/dodo-webhook'
+    | '/api/public/kashier-webhook'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/k' | '/pay-done'
-  id: '__root__' | '/' | '/k' | '/pay-done'
+  to:
+    | '/'
+    | '/k'
+    | '/pay-done'
+    | '/api/public/dodo-webhook'
+    | '/api/public/kashier-webhook'
+  id:
+    | '__root__'
+    | '/'
+    | '/k'
+    | '/pay-done'
+    | '/api/public/dodo-webhook'
+    | '/api/public/kashier-webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   KRoute: typeof KRoute
   PayDoneRoute: typeof PayDoneRoute
+  ApiPublicDodoWebhookRoute: typeof ApiPublicDodoWebhookRoute
+  ApiPublicKashierWebhookRoute: typeof ApiPublicKashierWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +118,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PayDoneRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/dodo-webhook': {
+      id: '/api/public/dodo-webhook'
+      path: '/api/public/dodo-webhook'
+      fullPath: '/api/public/dodo-webhook'
+      preLoaderRoute: typeof ApiPublicDodoWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/kashier-webhook': {
+      id: '/api/public/kashier-webhook'
+      path: '/api/public/kashier-webhook'
+      fullPath: '/api/public/kashier-webhook'
+      preLoaderRoute: typeof ApiPublicKashierWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +139,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   KRoute: KRoute,
   PayDoneRoute: PayDoneRoute,
+  ApiPublicDodoWebhookRoute: ApiPublicDodoWebhookRoute,
+  ApiPublicKashierWebhookRoute: ApiPublicKashierWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
