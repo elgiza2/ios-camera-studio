@@ -156,7 +156,7 @@ function Admin() {
             <div className="flex gap-2">
               <button onClick={() => setEditing(null)} className="glass flex-1 rounded-full py-3">إلغاء</button>
               <button onClick={() => {
-                if (!editing.name || !editing.prompt) return toast.error("الاسم والبرومبت مطلوبين");
+                if (!editing.name || !editing.prompt) { toast.error("الاسم والبرومبت مطلوبين"); return; }
                 const exists = cfg.modes.some((m) => m.id === editing.id);
                 persist({ ...cfg, modes: exists ? cfg.modes.map((m) => (m.id === editing.id ? editing : m)) : [...cfg.modes, editing] });
                 setEditing(null);
