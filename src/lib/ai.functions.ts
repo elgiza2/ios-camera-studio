@@ -12,11 +12,11 @@ export const aiEditImage = createServerFn({ method: "POST" })
     if (!key) throw new Error("مفتاح الخدمة غير مضبوط");
     const m = data.image.match(/^data:(image\/\w+);base64,(.+)$/);
     if (!m) throw new Error("صورة غير صالحة");
-    const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+    const bytes = Uint8Array.from(atob(m[2]!), (c) => c.charCodeAt(0));
     const form = new FormData();
     form.append("model", MODEL);
     form.append("prompt", data.prompt);
-    form.append("image", new Blob([bytes], { type: m[1] }), "photo.jpg");
+    form.append("image", new Blob([bytes], { type: m[1]! }), "photo.jpg");
     const res = await fetch("https://api.fastrouter.ai/api/v1/images/edits", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}` },

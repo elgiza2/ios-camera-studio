@@ -133,7 +133,7 @@ function Camera({ last, onCapture, onGallery, onEdit }: {
   const [flash, setFlash] = useState(false);
   const [blink, setBlink] = useState(false);
   const [err, setErr] = useState("");
-  const mode = MODES[modeIdx];
+  const mode = MODES[modeIdx]!;
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -164,9 +164,9 @@ function Camera({ last, onCapture, onGallery, onEdit }: {
 
   return (
     <div className="relative h-full w-full flex flex-col"
-      onTouchStart={(e) => (touchX.current = e.touches[0].clientX)}
+      onTouchStart={(e) => (touchX.current = e.touches[0]!.clientX)}
       onTouchEnd={(e) => {
-        const dx = e.changedTouches[0].clientX - touchX.current;
+        const dx = e.changedTouches[0]!.clientX - touchX.current;
         if (Math.abs(dx) > 50) setModeIdx((i) => Math.min(MODES.length - 1, Math.max(0, i + (dx < 0 ? 1 : -1))));
       }}>
       {/* top bar */}
