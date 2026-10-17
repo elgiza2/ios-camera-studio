@@ -71,6 +71,6 @@ export const getPublicConfig = createServerFn({ method: "GET" }).handler(async (
   const c = await loadConfig().catch(() => defaultConfig());
   return {
     modes: c.modes.filter((m) => m.enabled !== false),
-    prices: { monthly: c.kashier.monthly, yearly: c.kashier.yearly, currency: c.kashier.currency },
+    prices: { monthly: 3, yearly: 0, currency: "USD" },
   };
 });

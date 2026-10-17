@@ -35,9 +35,18 @@ export function consumeTrial() {
   const used = raw.day === today() ? raw.used + 1 : 1;
   localStorage.setItem("lumen_trials", JSON.stringify({ day: today(), used }));
 }
-export const isPro = () => localStorage.getItem("lumen_pro") === "1";
+let verifiedExpiry = 0;
+export const isPro = () => verifiedExpiry > Date.now();
+export function deviceToken() {
+  const existing = localStorage.getItem('lumen_device');
+  if (existing && /^[a-f0-9]{64}$/.test(existing)) return existing;
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const token = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  localStorage.setItem('lumen_device', token);
+  return token;
+}
 
 export const CAMERA_PROMPT =
   "Clean up image and add Bokeh effect with natural tone and make it from iPhone 18 pro max";
 
-export const setPro = () => localStorage.setItem("lumen_pro", "1");
+export const setPro = (expiresAt: string | null) => { verifiedExpiry = expiresAt ? Date.parse(expiresAt) : 0; };

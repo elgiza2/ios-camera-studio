@@ -17,7 +17,7 @@ export function verifyKashier(data: Record<string, unknown>, signature: string, 
   if (!/^[a-f0-9]{64}$/i.test(signature)) return false;
   return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'));
 }
-export async function reconcileOrder(orderId: string, credentials: { kashierSecret?: string; dodoKey?: string }) {
+export async function reconcileOrder(orderId: string, credentials: { kashierSecret?: string | undefined; dodoKey?: string | undefined }) {
   const db = await paymentDb();
   const { data: order } = await db.from('lumen_payment_orders').select('*').eq('id', orderId).maybeSingle();
   if (!order?.provider_session) return false;

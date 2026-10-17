@@ -1,22 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 export const Route = createFileRoute("/pay-done")({
-  head: () => ({ meta: [{ title: "Lumen — نتيجة الدفع" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Lumen — تأكيد اشتراكك" }, { name: "description", content: "تأكيد اشتراك Lumen Pro بأمان من شركة الدفع." }, { property: "og:title", content: "Lumen — تأكيد اشتراكك" }, { property: "og:description", content: "تأكيد اشتراك Lumen Pro على جهازك." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }, { name: "robots", content: "noindex" }] }),
   component: PayDone,
 });
 
 function PayDone() {
-  const [ok, setOk] = useState<boolean | null>(null);
   useEffect(() => {
-    const s = new URLSearchParams(location.search).get("paymentStatus");
-    const success = s === "SUCCESS";
-    setOk(success);
-    window.parent?.postMessage({ type: "lumen-pay", success }, location.origin);
+    window.parent?.postMessage({ type: "lumen-pay-return" }, location.origin);
   }, []);
   return (
     <div className="grid h-screen place-items-center text-center" dir="rtl">
-      <p className="text-lg">{ok === null ? "…" : ok ? "تم الدفع بنجاح ✓" : "لم يكتمل الدفع"}</p>
+      <p className="text-lg">جاري مراجعة حالة الدفع…</p>
     </div>
   );
 }

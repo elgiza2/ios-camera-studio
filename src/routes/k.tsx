@@ -7,7 +7,7 @@ import { adminLoad, adminSave, adminTestKey } from "@/lib/admin.functions";
 import { CATEGORIES, type AIMode } from "@/lib/modes";
 
 export const Route = createFileRoute("/k")({
-  head: () => ({ meta: [{ title: "Lumen — لوحة الراوتر" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Lumen — إدارة الكاميرا" }, { name: "description", content: "إدارة أوضاع Lumen ومفاتيح معالجة الصور." }, { property: "og:title", content: "Lumen — إدارة الكاميرا" }, { property: "og:description", content: "إدارة أوضاع الكاميرا وإعداداتها." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }, { name: "robots", content: "noindex" }] }),
   component: Admin,
 });
 
@@ -91,7 +91,7 @@ function Admin() {
                   <input defaultValue={k.label} onBlur={(e) => e.target.value !== k.label && upd({ label: e.target.value })} className="flex-1 bg-transparent font-semibold outline-none" />
                   <span className={`text-xs font-semibold ${c}`}>● {s}</span>
                 </div>
-                <p dir="ltr" className="mt-1 font-mono text-xs text-muted-foreground">{k.key.slice(0, 8)}••••{k.key.slice(-4)} · {k.uses} طلب · {k.fails} فشل</p>
+                <p className="mt-1 text-xs text-muted-foreground">مفتاح محفوظ · {k.uses} طلب · {k.fails} فشل</p>
                 {k.lastError && <p dir="ltr" className="mt-1 truncate text-[11px] text-destructive">{k.lastError}</p>}
                 <div className="mt-3 flex flex-wrap gap-2 text-xs">
                   <button onClick={async () => { const r = await test({ data: { password: pw, key: k.key } }); r.ok ? toast.success("المفتاح شغال") : toast.error(`المفتاح لا يعمل (${r.status})`); }} className="glass flex items-center gap-1 rounded-full px-3 py-1.5"><Activity className="size-3.5" />اختبار</button>
@@ -123,24 +123,10 @@ function Admin() {
 
       {tab === "pay" && (
         <div className="space-y-3 p-4">
-          <p className="text-xs text-muted-foreground">بيانات كاشير من لوحة التاجر (Integrate now → Payment API Key).</p>
-          {([["merchantId", "Merchant ID (MID-xx-xx)"], ["apiKey", "Payment API Key"], ["currency", "العملة"]] as const).map(([f, l]) => (
-            <label key={f} className="glass block rounded-2xl p-3 text-xs text-muted-foreground">{l}
-              <input dir="ltr" defaultValue={cfg.kashier[f]} onBlur={(e) => persist({ ...cfg, kashier: { ...cfg.kashier, [f]: e.target.value.trim() } })} className="mt-1 block w-full bg-transparent text-sm text-foreground outline-none" />
-            </label>
-          ))}
-          <div className="grid grid-cols-2 gap-3">
-            {([["monthly", "السعر الشهري"], ["yearly", "السعر السنوي"]] as const).map(([f, l]) => (
-              <label key={f} className="glass block rounded-2xl p-3 text-xs text-muted-foreground">{l}
-                <input type="number" defaultValue={cfg.kashier[f]} onBlur={(e) => persist({ ...cfg, kashier: { ...cfg.kashier, [f]: +e.target.value } })} className="mt-1 block w-full bg-transparent text-sm text-foreground outline-none" />
-              </label>
-            ))}
-          </div>
-          <div className="glass grid grid-cols-2 rounded-full p-1 text-sm">
-            {(["test", "live"] as const).map((m) => (
-              <button key={m} onClick={() => persist({ ...cfg, kashier: { ...cfg.kashier, mode: m } })} className={`rounded-full py-2 ${cfg.kashier.mode === m ? "bg-primary text-primary-foreground" : ""}`}>{m === "test" ? "تجريبي" : "حقيقي"}</button>
-            ))}
-          </div>
+          <h2 className="text-xl font-semibold">Lumen Pro</h2>
+          <p className="text-3xl font-semibold" dir="ltr">$3.00 <span className="text-sm text-muted-foreground">USD / month</span></p>
+          <p className="text-sm text-muted-foreground">كاشير · بطاقات ومحافظ</p>
+          <p className="text-sm text-muted-foreground">Dodo · Apple Pay وGoogle Pay</p>
         </div>
       )}
 
