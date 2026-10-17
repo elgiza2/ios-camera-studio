@@ -31,7 +31,7 @@ export const createCheckout = createServerFn({ method: "POST" })
         } : {
           expireAt: new Date(Date.now() + 3600000).toISOString(), maxFailureAttempts: 3, paymentType: 'credit', amount: '3.00', currency: 'USD', order: order.id, merchantId,
           merchantRedirect: `${origin}/pay-done`, serverWebhook: `${origin}/api/public/kashier-webhook`, display: 'ar', type: 'one-time', enable3DS: true,
-          allowedMethods: data.method === 'vodafone' ? 'wallet' : 'card', defaultMethod: data.method === 'vodafone' ? 'wallet' : 'card', description: 'Lumen Pro - one month', metaData: { lumen_order: order.id },
+          allowedMethods: data.method === 'vodafone' ? 'wallet' : 'card', defaultMethod: data.method === 'vodafone' ? 'wallet' : 'card', description: 'Lumen Pro - one month', metaData: { lumen_order: order.id }, customer: { reference: order.id },
         }), signal: AbortSignal.timeout(30000),
       });
       if (!r.ok) return { error: data.method === 'vodafone' ? 'كاشير لم يقبل الدفع بالمحفظة بالدولار؛ جرّب بطاقة أو وسيلة أخرى' : 'شركة الدفع لم تقبل الطلب؛ راجع تفعيل حساب التاجر' };

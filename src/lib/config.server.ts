@@ -22,7 +22,7 @@ export function defaultConfig(): Config {
   return {
     keys: [],
     modes: DEFAULT_MODES,
-    kashier: { merchantId: "", apiKey: "", mode: "test", currency: "EGP", monthly: 150, yearly: 1200 },
+    kashier: { merchantId: "", apiKey: "", mode: "live", currency: "USD", monthly: 3, yearly: 0 },
   };
 }
 
