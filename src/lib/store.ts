@@ -30,7 +30,7 @@ export function trialsLeft(): number {
   const raw = JSON.parse(localStorage.getItem("lumen_trials") ?? "{}");
   return raw.day === today() ? Math.max(0, DAILY_TRIALS - raw.used) : DAILY_TRIALS;
 }
-export function useTrial() {
+export function consumeTrial() {
   const raw = JSON.parse(localStorage.getItem("lumen_trials") ?? "{}");
   const used = raw.day === today() ? raw.used + 1 : 1;
   localStorage.setItem("lumen_trials", JSON.stringify({ day: today(), used }));
