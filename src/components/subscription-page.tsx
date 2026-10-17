@@ -19,7 +19,7 @@ const methods: { id: PaymentMethod; name: string; symbol: string }[] = [
 function MethodIcon({ method }: { method: (typeof methods)[number] }) {
   if (method.id === 'mastercard') return <span className="mastercard-mark flex w-9" aria-hidden><i /><i /></span>;
   if (method.id === 'vodafone') return <Smartphone className="text-destructive" />;
-  if (method.id === 'apple') return <span aria-hidden className="text-xl"></span>;
+  if (method.id === 'apple') return <Wallet aria-hidden />;
   if (method.id === 'other') return <Wallet />;
   return <span aria-hidden className="text-xs font-bold">{method.symbol}</span>;
 }
