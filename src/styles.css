@@ -197,3 +197,14 @@ html, body { background: var(--background); color: var(--foreground); font-famil
 @utility pop-in { animation: pop-in .45s var(--spring) both; }
 @keyframes sheet-up { from { transform: translateY(100%) } to { transform: none } }
 @utility sheet-up { animation: sheet-up .5s var(--spring) both; }
+
+:root {
+  --gallery-surface: oklch(0.14 0.005 260);
+  --mode-fill: oklch(1 0 0 / 0.17);
+  --mode-shadow: inset 0 1px 0 oklch(1 0 0 / 0.3), 0 2px 10px oklch(0 0 0 / 0.25);
+}
+.gallery-page { background: var(--gallery-surface); }
+.mode-indicator { background: var(--mode-fill); box-shadow: var(--mode-shadow); transition: left 500ms var(--spring); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

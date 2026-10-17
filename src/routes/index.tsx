@@ -6,6 +6,7 @@ import {
   RefreshCw, Zap, ZapOff, Sparkles, Wand2, Crop, SlidersHorizontal, Trash2, Download, Crown, Check, ChevronLeft, Images,
   Share2, Pencil, X, RotateCw, FlipHorizontal, FlipVertical, Palette, Loader2,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { aiEditImage, getPublicConfig } from "@/lib/ai.functions";
 import { createCheckout } from "@/lib/pay.functions";
 import { CAMERA_PROMPT, consumeTrial, deletePhoto, isPro, listPhotos, savePhoto, setPro, trialsLeft, DAILY_TRIALS, type Photo } from "@/lib/store";
@@ -92,7 +93,6 @@ function App() {
       const done: Photo = { ...pending, src: image, pending: false };
       await savePhoto(done);
       setPhotos((p) => p.map((x) => (x.id === id ? done : x)));
-      toast.success("صورتك جاهزة في المعرض ✨");
       return done;
     } catch (e) {
       const fallback: Photo = { ...pending, pending: false, label: "أصلية" };
@@ -109,7 +109,7 @@ function App() {
       <div key={view} className="pop-in h-full">
         {view === "camera" && (
           <Camera last={photos[0]} onCapture={(img, m) => runAI(img, CAMERA_PROMPT + m.extra, "محسّنة")}
-            onGallery={() => setView("gallery")} onEdit={() => { setStudioPhoto(null); setView("studio"); }} onPro={() => setView("pro")} />
+            onGallery={() => setView("gallery")} onPro={() => setView("pro")} />
         )}
         {view === "gallery" && (
           <Gallery photos={photos} onBack={() => setView("camera")}
@@ -131,8 +131,8 @@ const ZOOM_STOPS = [0.5, 1, 2, 5, 10, 25, 50, 100];
 const toPos = (z: number) => Math.log(z / 0.5) / Math.log(200); // 0..1
 const fromPos = (p: number) => Math.round(0.5 * Math.pow(200, p) * 10) / 10;
 
-function Camera({ last, onCapture, onGallery, onEdit, onPro }: {
-  last: Photo | undefined; onCapture: (img: string, mode: Mode) => void; onGallery: () => void; onEdit: () => void; onPro: () => void;
+function Camera({ last, onCapture, onGallery, onPro }: {
+  last: Photo | undefined; onCapture: (img: string, mode: Mode) => void; onGallery: () => void; onPro: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<MediaStreamTrack | null>(null);
@@ -229,9 +229,8 @@ function Camera({ last, onCapture, onGallery, onEdit, onPro }: {
         <button onClick={() => setFlash((f) => !f)} className="glass grid size-10 place-items-center rounded-full transition ease-ios active:scale-90" aria-label="الفلاش">
           {flash ? <Zap className="size-5 text-primary" fill="currentColor" /> : <ZapOff className="size-5" />}
         </button>
-        <span className="glass rounded-full px-3 py-1 text-[11px] font-semibold tracking-widest text-primary transition-all duration-500 ease-ios">{mode.label}</span>
         <button onClick={onPro} className="glass flex h-10 items-center gap-1.5 rounded-full px-3.5 text-xs font-bold tracking-wide transition ease-ios active:scale-90" aria-label="الاشتراك">
-          <Crown className="size-4 text-primary" /> {isPro() ? "PRO ✓" : "PRO"}
+          PRO
         </button>
       </div>
 
@@ -244,7 +243,6 @@ function Camera({ last, onCapture, onGallery, onEdit, onPro }: {
           {mode.id === "portrait" && <div className="pop-in pointer-events-none absolute inset-0 shadow-[inset_0_0_140px_50px_var(--scrim)]" />}
           {err && <div className="absolute inset-0 grid place-items-center p-8 text-center text-muted-foreground">{err}</div>}
           {blink && <div className="absolute inset-0 bg-shutter" />}
-          <div key={zLabel} className="pop-in glass absolute left-1/2 top-3 -translate-x-1/2 rounded-full px-3 py-1 text-xs font-bold tabular-nums">{zLabel}×</div>
         </div>
 
         <div className="absolute bottom-4 left-1/2 w-[86%] -translate-x-1/2">
@@ -280,14 +278,14 @@ function Camera({ last, onCapture, onGallery, onEdit, onPro }: {
         </div>
       </div>
 
-      <div className="relative h-11 overflow-hidden">
-        <div className="absolute left-1/2 top-1/2 flex gap-6 transition-transform duration-500 ease-ios"
-          style={{ transform: `translate(${-(modeIdx * 84 + 30)}px, -50%)` }}>
+      <div className="px-4 py-3">
+        <div className="camera-modes glass relative mx-auto grid h-12 w-full max-w-lg grid-cols-5 rounded-full p-1" role="tablist" aria-label="أوضاع التصوير">
+          <span className="mode-indicator absolute bottom-1 top-1 rounded-full" style={{ width: "calc((100% - 8px) / 5)", left: `calc(4px + (100% - 8px) / 5 * ${modeIdx})` }} />
           {MODES.map((m, i) => (
-            <button key={m.id} onClick={() => setModeIdx(i)}
-              className={`w-[60px] text-center text-[13px] font-semibold tracking-wider transition-all duration-500 ease-ios ${i === modeIdx ? "scale-110 text-primary" : "text-muted-foreground"}`}>
-              {m.label}
-            </button>
+            <Button variant="ghost" key={m.id} role="tab" aria-selected={i === modeIdx} onClick={() => setModeIdx(i)}
+              className={`relative z-10 h-10 min-w-0 rounded-full px-0 text-[10px] font-semibold transition-all duration-500 ease-ios ${i === modeIdx ? "text-primary" : "text-muted-foreground"}`}>
+              {({ night: "ليلي", portrait: "بورتريه", photo: "صورة", square: "مربع", pano: "بانوراما" })[m.id]}
+            </Button>
           ))}
         </div>
       </div>
@@ -297,11 +295,9 @@ function Camera({ last, onCapture, onGallery, onEdit, onPro }: {
           {last ? <img src={last.src} className="h-full w-full object-cover" alt="" /> : <Images className="m-auto size-6 text-muted-foreground" />}
           {last?.pending && <div className="shimmer absolute inset-0" />}
         </button>
-        <button onClick={onEdit} className="glass grid size-12 place-items-center rounded-full transition ease-ios active:scale-90" aria-label="تعديل"><Wand2 className="size-5" /></button>
         <button onClick={shoot} aria-label="التقاط" className="grid size-[78px] place-items-center rounded-full border-4 border-shutter transition ease-ios active:scale-90">
           <span className={`size-[62px] rounded-full bg-shutter transition-all duration-300 ease-ios ${busy ? "scale-75 opacity-70" : ""}`} />
         </button>
-        <span className="size-12" />
         <button onClick={() => { setSpin((s) => s + 180); setFacing((f) => (f === "user" ? "environment" : "user")); setZoom(1); }}
           className="glass grid size-14 place-items-center rounded-full" aria-label="قلب الكاميرا">
           <RefreshCw className="size-6 transition-transform duration-500 ease-ios" style={{ transform: `rotate(${spin}deg)` }} />
@@ -334,54 +330,43 @@ function Gallery({ photos, onBack, onEdit, onDelete }: {
 }) {
   const [open, setOpen] = useState<Photo | null>(null);
   const [filter, setFilter] = useState<"all" | "ai" | "edit">("all");
+  const [columns, setColumns] = useState<2 | 3>(3);
   const list = photos.filter((p) => filter === "all" || (filter === "edit" ? p.label === "معدّلة" : p.label !== "معدّلة" && p.label !== "أصلية"));
   const groups = useMemo(() => {
     const g: [string, Photo[]][] = [];
     for (const p of list) { const l = dayLabel(p.createdAt); const last = g[g.length - 1]; if (last && last[0] === l) last[1].push(p); else g.push([l, [p]]); }
     return g;
   }, [list]);
-
   return (
-    <div className="relative h-full" dir="rtl">
-      <div className="h-full overflow-y-auto pb-36 pt-[calc(max(env(safe-area-inset-top),14px)+64px)]">
-        <div className="px-5 pb-3">
-          <h1 className="text-[34px] font-bold leading-tight">المعرض</h1>
-          <p className="text-sm text-muted-foreground">{photos.length} صورة</p>
+    <div className="gallery-page flex h-full flex-col" dir="rtl">
+      <header className="flex shrink-0 items-center justify-between px-5 pb-4 pt-[max(env(safe-area-inset-top),18px)]">
+        <Button variant="ghost" size="icon" onClick={onBack} className="glass size-11 rounded-full" aria-label="العودة للكاميرا"><ChevronLeft className="size-5 rotate-180" /></Button>
+        <span className="text-sm font-medium text-muted-foreground">LUMEN</span>
+        <Button variant="ghost" size="icon" onClick={() => setColumns(columns === 3 ? 2 : 3)} className="glass size-11 rounded-full" aria-label="تغيير حجم الصور"><Images className="size-5" /></Button>
+      </header>
+      <div className="px-6 pb-5">
+        <div className="flex items-end justify-between"><h1 className="text-[36px] font-bold leading-tight">مكتبتك</h1><span className="pb-1 text-sm tabular-nums text-muted-foreground">{photos.length} صورة</span></div>
+        <div className="glass relative mt-5 grid h-11 grid-cols-3 rounded-full p-1">
+          {([["all", "كل الصور"], ["ai", "محسّنة"], ["edit", "معدّلة"]] as const).map(([k, l]) => (
+            <Button variant="ghost" key={k} onClick={() => setFilter(k)} className={`h-9 rounded-full px-2 text-xs transition-all duration-300 ease-ios ${filter === k ? "bg-glass-strong text-foreground" : "text-muted-foreground"}`}>{l}</Button>
+          ))}
         </div>
-        {list.length === 0 && (
-          <div className="mt-24 text-center text-muted-foreground"><Images className="mx-auto mb-3 size-12 opacity-40" />لا توجد صور بعد</div>
-        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(env(safe-area-inset-bottom),24px)]">
+        {list.length === 0 && <div className="flex h-3/5 flex-col items-center justify-center gap-4 text-muted-foreground"><div className="glass grid size-20 place-items-center rounded-full"><Images className="size-8" /></div><p className="text-lg font-medium">{photos.length ? "لا توجد صور هنا" : "لحظاتك تبدأ بصورة"}</p>{!photos.length && <Button variant="ghost" onClick={onBack} className="text-primary">افتح الكاميرا <ChevronLeft className="size-4" /></Button>}</div>}
         {groups.map(([label, items]) => (
-          <section key={label} className="mb-4">
-            <h2 className="px-5 pb-2 text-[15px] font-semibold">{label}</h2>
-            <div className="grid grid-cols-3 gap-[3px] px-[3px]">
-              {items.map((p, i) => (
-                <button key={p.id} onClick={() => !p.pending && setOpen(p)} style={{ animationDelay: `${i * 25}ms` }}
-                  className="pop-in relative aspect-square overflow-hidden rounded-[6px] bg-muted transition ease-ios active:scale-95">
-                  <img src={p.src} className={`h-full w-full object-cover ${p.pending ? "scale-110 blur-md" : ""}`} alt="" />
-                  {p.pending && <div className="shimmer absolute inset-0 grid place-items-center"><Sparkles className="size-6 animate-pulse text-primary" /></div>}
-                  {!p.pending && p.label && p.label !== "أصلية" && <span className="glass absolute bottom-1 left-1 grid size-5 place-items-center rounded-full"><Sparkles className="size-3 text-primary" /></span>}
-                </button>
-              ))}
+          <section key={label} className="mb-6">
+            <div className="flex items-center justify-between px-2 pb-3"><h2 className="text-base font-semibold">{label}</h2><span className="text-xs text-muted-foreground">{items.length}</span></div>
+            <div className={`grid gap-2 ${columns === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+              {items.map((p) => <Button variant="ghost" key={p.id} disabled={p.pending} aria-label={`عرض الصورة ${p.id}`} onClick={() => setOpen(p)} className="relative h-auto aspect-[3/4] overflow-hidden rounded-lg bg-muted p-0 transition duration-500 ease-ios active:scale-95">
+                <img src={p.src} className={`h-full w-full object-cover ${p.pending ? "blur-sm" : ""}`} alt="صورة من مكتبتك" />
+                {p.pending && <div className="shimmer absolute inset-0" aria-label="جاري المعالجة" />}
+              </Button>)}
             </div>
           </section>
         ))}
       </div>
-
-      <div className="glass absolute inset-x-0 top-0 z-20 flex items-center justify-between border-x-0 border-t-0 px-4 pt-[max(env(safe-area-inset-top),14px)] pb-3">
-        <button onClick={onBack} className="glass grid size-10 place-items-center rounded-full"><ChevronLeft className="size-5 rotate-180" /></button>
-        <span className="text-[17px] font-semibold">Lumen</span>
-        <span className="size-10" />
-      </div>
-
-      <div className="glass-strong absolute bottom-[max(env(safe-area-inset-bottom),22px)] left-1/2 z-20 flex -translate-x-1/2 gap-1 rounded-full p-1.5">
-        {([["all", "الكل"], ["ai", "بالذكاء"], ["edit", "معدّلة"]] as const).map(([k, l]) => (
-          <button key={k} onClick={() => setFilter(k)} className={`rounded-full px-5 py-2 text-sm transition-all duration-300 ease-ios ${filter === k ? "bg-glass-strong font-semibold text-primary" : "text-muted-foreground"}`}>{l}</button>
-        ))}
-      </div>
-
-      {open && <Viewer photo={open} onClose={() => setOpen(null)} onEdit={() => { onEdit(open); setOpen(null); }}
-        onDelete={() => { onDelete(open.id); setOpen(null); toast.success("تم المسح"); }} />}
+      {open && <Viewer photo={open} onClose={() => setOpen(null)} onEdit={() => { onEdit(open); setOpen(null); }} onDelete={() => { onDelete(open.id); setOpen(null); }} />}
     </div>
   );
 }
@@ -398,7 +383,6 @@ function Viewer({ photo, onClose, onEdit, onDelete }: { photo: Photo; onClose: (
       </div>
       <div className={`absolute inset-x-0 top-0 flex items-center px-4 pt-[max(env(safe-area-inset-top),14px)] pb-3 transition-all duration-500 ease-ios ${chrome ? "" : "-translate-y-full opacity-0"}`}>
         <button onClick={onClose} className="glass flex h-10 items-center gap-1 rounded-full pl-4 pr-2 text-sm"><ChevronLeft className="size-5 rotate-180" />رجوع</button>
-        {photo.original && photo.original !== photo.src && <span className="glass mr-auto rounded-full px-3 py-1.5 text-[11px] text-muted-foreground">اضغط مطولاً للأصل</span>}
       </div>
       <div className={`absolute bottom-[max(env(safe-area-inset-bottom),22px)] left-1/2 -translate-x-1/2 transition-all duration-500 ease-ios ${chrome ? "" : "translate-y-[200%] opacity-0"}`}>
         <div className="glass-strong flex gap-2 rounded-full p-2">
@@ -514,7 +498,7 @@ function Studio({ photos, photo, setPhoto, modes, onBack, onPaywall, runAI, onSa
           style={{ ...(crop ? { aspectRatio: String(crop), height: crop < 1 ? "100%" : undefined, width: crop >= 1 ? "100%" : undefined } : {}), transform: `rotate(${rotate}deg) scale(${flip.x ? -1 : 1}, ${flip.y ? -1 : 1})` }}>
           <img src={photo.src} style={{ filter: cssOf(adj) }} className={`h-full w-full ${crop ? "object-cover" : "max-h-[55vh] object-contain"} ${busy ? "scale-105 blur-md" : ""} transition`} alt="" />
           {adj.vignette > 0 && <div className="pointer-events-none absolute inset-0" style={{ boxShadow: `inset 0 0 ${adj.vignette * 2}px ${adj.vignette}px oklch(0 0 0 / ${adj.vignette / 100})` }} />}
-          {busy && <div className="shimmer absolute inset-0 grid place-items-center"><span className="glass flex items-center gap-2 rounded-full px-4 py-2 text-sm"><Sparkles className="size-4 animate-spin text-primary" /> جاري السحر…</span></div>}
+          {busy && <div className="shimmer absolute inset-0 grid place-items-center"><span className="glass flex items-center gap-2 rounded-full px-4 py-2 text-sm">جاري المعالجة…</span></div>}
         </div>
       </div>
 
