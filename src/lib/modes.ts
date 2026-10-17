@@ -1,4 +1,4 @@
-export type AIMode = { id: string; name: string; category: string; prompt: string; thumb?: string; tile?: number; enabled?: boolean };
+export type AIMode = { id: string; name: string; category: string; prompt: string; thumb?: string | undefined; tile?: number; enabled?: boolean };
 
 export const CATEGORIES = ["ألعاب ومجسمات", "رسوم وكرتون", "فن ولوحات", "سينمائي"];
 

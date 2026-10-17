@@ -3,7 +3,7 @@ import { DEFAULT_MODES, type AIMode } from "./modes";
 
 export type ApiKey = {
   id: string; label: string; key: string; enabled: boolean;
-  uses: number; fails: number; blockedUntil: number; lastError?: string;
+  uses: number; fails: number; blockedUntil: number; lastError?: string | undefined;
 };
 export type Config = {
   keys: ApiKey[];
